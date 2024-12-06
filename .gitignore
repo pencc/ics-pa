@@ -9,5 +9,5 @@
 !README.md
 !.gitignore
 !init.sh
-!resources
+!/resources/*
 /fceux-am
