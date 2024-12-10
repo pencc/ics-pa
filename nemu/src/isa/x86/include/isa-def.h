@@ -27,11 +27,14 @@
  */
 
 typedef struct {
-  struct {
+  union {
     uint32_t _32;
-    uint16_t _16;
-    uint8_t _8[2];
+    union{
+      uint16_t _16;
+      uint8_t _8[2];
+    };
   } gpr[8];
+
 
   /* Do NOT change the order of the GPRs' definitions. */
   uint32_t eax, ecx, edx, ebx, esp, ebp, esi, edi;
