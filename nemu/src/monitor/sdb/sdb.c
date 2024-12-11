@@ -18,6 +18,8 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "sdb.h"
+#include <memory/vaddr.h>
+#include <memory/paddr.h>
 
 static int is_batch_mode = false;
 
@@ -111,8 +113,51 @@ end:
 }
 
 static int cmd_x(char *args) {
-// TODO:
+  char *arg1, *arg2, *endptr;
+  long int pr_num, pr_addr;
+  int group_num, i, j, out_of_pmem_flag = 0;
 
+  if(!args)
+    goto param_unsupported;
+
+  arg1 = strtok(NULL, " ");
+  arg2 = strtok(NULL, " ");
+
+  if(!arg1 || !arg2)
+    goto param_unsupported;
+
+  pr_num = atol(arg1);
+  pr_addr = strtol(arg2, &endptr, 16);
+  if(*endptr != '\0')
+    goto param_unsupported;
+
+  group_num = pr_num / 8;
+  if(pr_num % 8)
+    group_num += 1;
+
+  for(i = 0; i < group_num; i++) {
+      printf("\n0x%lx: ", pr_addr + (i * 8));
+
+      for(j = 0; j < 8; j++) {
+        if(!in_pmem(pr_addr + (i * 8) + j)) {
+          out_of_pmem_flag = 1;
+          break;
+        }
+
+        printf("0x%02x   ", vaddr_read(pr_addr + (i * 8) + j, 1));
+      }
+
+      if(out_of_pmem_flag) {
+          printf("[PMEM OUT OF LIMIT]");
+          break;
+      }
+  }
+  printf("\n\n");
+
+  return 0;
+
+param_unsupported:
+  printf("unsupported command params\n");
   return 0;
 }
 
@@ -147,13 +192,13 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
   { "si", "si [N], let the program execute N instructions and then pause execution. \
 When N is not given, the default is 1. (for example: si 10)", cmd_si },
-  { "info", "info r/ info w, print program info. (r: register info; w: watch point info;)", cmd_info },
-  { "x", "x N EXPR, calc the result value of the EXPR as the starting memory \
+  { "info", "[info r]/ [info w], print program info. (r: register info; w: watch point info;)", cmd_info },
+  { "x", "x [N] [EXPR], calc the result value of the EXPR as the starting memory \
 address, output N consecutive 4 bytes in hex form. (for example: x 10 $esp)", cmd_x },
-  { "p", "p EXPR, calc the value of the expression EXPR. (for example: p $eax + 1)", cmd_p },
-  { "w", "w EXPR, when the value of expression EXPR changes, program execution is paused. (for \
+  { "p", "p [EXPR], calc the value of the expression EXPR. (for example: p $eax + 1)", cmd_p },
+  { "w", "w [EXPR], when the value of expression EXPR changes, program execution is paused. (for \
 example: w *0x2000)", cmd_w },
-  { "d", "d N, delete the monitoring point with serial number N. (for example: d 2)", cmd_d },
+  { "d", "d [N], delete the monitoring point with serial number N. (for example: d 2)", cmd_d },
 };
 
 #define NR_CMD ARRLEN(cmd_table)
