@@ -68,7 +68,19 @@ static int cmd_q(char *args) {
 }
 
 static int cmd_si(char *args) {
-// TODO:
+  int step = 1;
+
+  if(args)
+    step = atoi(args);
+
+  if(!step) {
+    printf("step(%s) is not legel\n", args);
+    return 0;
+  }
+
+  printf("%d steps exec...\n", step);
+
+  cpu_exec(step);
 
   return 0;
 }
