@@ -42,16 +42,67 @@ static char* rl_gets() {
   return line_read;
 }
 
+// // subcommand for cmd_info [info r]
+// static int _cmd_info_r(char *args) {
+// // TODO:
+
+//   return 0;
+// }
+
+// // subcommand for cmd_info [info w]
+// static int _cmd_info_w(char *args) {
+// // TODO:
+
+//   return 0;
+// }
+
+/* command implemetion start */
 static int cmd_c(char *args) {
   cpu_exec(-1);
   return 0;
 }
 
-
 static int cmd_q(char *args) {
   nemu_state.state = NEMU_QUIT;
   return -1;
 }
+
+static int cmd_si(char *args) {
+// TODO:
+
+  return 0;
+}
+
+static int cmd_info(char *args) {
+// TODO:
+
+  return 0;
+}
+
+static int cmd_x(char *args) {
+// TODO:
+
+  return 0;
+}
+
+static int cmd_p(char *args) {
+// TODO:
+
+  return 0;
+}
+
+static int cmd_w(char *args) {
+// TODO:
+
+  return 0;
+}
+
+static int cmd_d(char *args) {
+// TODO:
+
+  return 0;
+}
+/* command implemetion end */
 
 static int cmd_help(char *args);
 
@@ -63,9 +114,15 @@ static struct {
   { "help", "Display information about all supported commands", cmd_help },
   { "c", "Continue the execution of the program", cmd_c },
   { "q", "Exit NEMU", cmd_q },
-
-  /* TODO: Add more commands */
-
+  { "si", "si [N], let the program execute N instructions and then pause execution. \
+When N is not given, the default is 1. (for example: si 10)", cmd_si },
+  { "info", "info r/ info w, print program info. (r: register info; w: watch point info;)", cmd_info },
+  { "x", "x N EXPR, calc the result value of the EXPR as the starting memory \
+address, output N consecutive 4 bytes in hex form. (for example: x 10 $esp)", cmd_x },
+  { "p", "p EXPR, calc the value of the expression EXPR. (for example: p $eax + 1)", cmd_p },
+  { "w", "w EXPR, when the value of expression EXPR changes, program execution is paused. (for \
+example: w *0x2000)", cmd_w },
+  { "d", "d N, delete the monitoring point with serial number N. (for example: d 2)", cmd_d },
 };
 
 #define NR_CMD ARRLEN(cmd_table)
