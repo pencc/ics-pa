@@ -42,19 +42,18 @@ static char* rl_gets() {
   return line_read;
 }
 
-// // subcommand for cmd_info [info r]
-// static int _cmd_info_r(char *args) {
-// // TODO:
+// subcommand for cmd_info [info r]
+static int _cmd_info_r() {
+  isa_reg_display();
+  return 0;
+}
 
-//   return 0;
-// }
+// subcommand for cmd_info [info w]
+static int _cmd_info_w() {
+// TODO:
 
-// // subcommand for cmd_info [info w]
-// static int _cmd_info_w(char *args) {
-// // TODO:
-
-//   return 0;
-// }
+  return 0;
+}
 
 /* command implemetion start */
 static int cmd_c(char *args) {
@@ -74,20 +73,40 @@ static int cmd_si(char *args) {
     step = atoi(args);
 
   if(!step) {
-    printf("step(%s) is not legel\n", args);
-    return 0;
+    printf("step(%s) is ilegel\n", args);
+    goto end;
   }
 
   printf("%d steps exec...\n", step);
 
   cpu_exec(step);
 
+end:
   return 0;
 }
 
 static int cmd_info(char *args) {
-// TODO:
+  int len;
 
+  if(!args) {
+    printf("command \"info\" need subcommand, details in help info\n");
+    goto end;
+  }
+
+  len = strnlen(args, 2);
+  if(1 != len) {
+    printf("unsupported subcommand \"%s\"\n", args);
+    goto end;
+  }
+
+  if('r' == *args)
+    _cmd_info_r();
+  else if('w' == *args)
+    _cmd_info_w();
+  else
+    printf("unsupported subcommand \"%s\"\n", args);
+
+end:
   return 0;
 }
 
