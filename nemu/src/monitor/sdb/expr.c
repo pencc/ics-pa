@@ -21,6 +21,11 @@
 #include <regex.h>
 #include <string.h>
 
+// For expr unit test, in this mode, special token will be set to a custom number, as follow:
+// ::TK_DEREF      = 1
+// ::TK_REG_NAME   = 2
+#define EXPR_UNIT_TEST_ENABLED 1
+
 enum {
   TK_NOTYPE = 256,
   TK_EQ,
@@ -30,7 +35,10 @@ enum {
   TK_DIVIDE,
   TK_OPENPARENTHESIS,
   TK_CLOSEPARENTHESIS,
-  TK_NUMBER
+  TK_NUMBER,
+  TK_HEX_NUMBER,
+  TK_REG_NAME,
+  TK_DEREF
 };
 
 static struct rule {
@@ -45,7 +53,9 @@ static struct rule {
   {"\\/", TK_DIVIDE},
   {"\\(", TK_OPENPARENTHESIS},
   {"\\)", TK_CLOSEPARENTHESIS},
-  {"[1-9][0-9]*", TK_NUMBER}
+  {"[1-9][0-9]*", TK_NUMBER},
+  {"0[xX][0-9a-fA-F]+", TK_HEX_NUMBER},
+  {"\\$[a-zA-Z0-9]+", TK_REG_NAME},
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -107,21 +117,40 @@ static bool make_token(char *e) {
       if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
         char *substr_start = e + position;
         int substr_len = pmatch.rm_eo;
-        Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
-            i, rules[i].regex, position, substr_len, substr_len, substr_start);
         position += substr_len;
         switch (rules[i].token_type) {
           case TK_NUMBER:
+          case TK_HEX_NUMBER:
+          case TK_REG_NAME:
+            Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
+                i, rules[i].regex, position, substr_len, substr_len, substr_start);
             check_nr_valid();
             check_substr_valid(substr_len);
             memset(tokens[nr_token].str, 0, sizeof(tokens[0].str) / sizeof(char));
             memcpy(tokens[nr_token].str, substr_start, substr_len);
+            tokens[nr_token].type = rules[i].token_type;
+            nr_token++;
+            break;
           case TK_ADD:
           case TK_SUB:
           case TK_MULTIPLY:
+            if(0 == nr_token || TK_ADD == tokens[nr_token - 1].type
+                             || TK_SUB == tokens[nr_token - 1].type
+                             || TK_MULTIPLY == tokens[nr_token - 1].type
+                             || TK_DIVIDE == tokens[nr_token - 1].type
+                             || TK_OPENPARENTHESIS == tokens[nr_token - 1].type) {
+              Log("match (TK_DEREF) rules[%d] = \"%s\" at position %d with len %d: %.*s",
+                   i, rules[i].regex, position, substr_len, substr_len, substr_start);
+              check_nr_valid();
+              tokens[nr_token].type = TK_DEREF;
+              nr_token++;
+              break;
+            }
           case TK_DIVIDE:
           case TK_OPENPARENTHESIS:
           case TK_CLOSEPARENTHESIS:
+            Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
+                i, rules[i].regex, position, substr_len, substr_len, substr_start);
             check_nr_valid();
             tokens[nr_token].type = rules[i].token_type;
             nr_token++;
@@ -174,16 +203,39 @@ static inline bool check_parentheses(int token_start, int token_end)
 static inline int eval(int token_start, int token_end)
 {
   int token_tmp, parenthesis_num;
+  int token_diff;
 
   if(token_start > token_end){
     assert(0);
   }
 
-  // 1. 若表达式为数值，则返回数值
-  if(token_start == token_end) {
-    if(TK_NUMBER == tokens[token_start].type) {
+  // 1. 若表达式为数值类，则返回数值
+  token_diff = token_end - token_start;
+  if(0 == token_diff || 1 == token_diff) {
+    if(0 == token_diff && TK_NUMBER == tokens[token_start].type) {  // TK_NUMBER
       Log("match TK_NUMBER, eval return number:%s;", tokens[token_start].str);
       return atoi(tokens[token_start].str);
+    } else if(0 == token_diff && TK_HEX_NUMBER == tokens[token_start].type) { // TK_HEX_NUMBER
+      Log("match TK_HEX_NUMBER, eval return number:%s;", tokens[token_start].str);
+      return strtol(tokens[token_start].str, NULL, 16);
+    } else if(1 == token_diff
+              && TK_DEREF == tokens[token_start].type
+              && (TK_NUMBER == tokens[token_end].type || TK_HEX_NUMBER == tokens[token_end].type)) { // TK_DEREF
+      Log("match TK_DEREF, eval pointer: *%s;", tokens[token_end].str);
+#if EXPR_UNIT_TEST_ENABLED
+      return 1;
+#else
+      // TODO: find deref
+      return -1;
+#endif
+    } else if(0 == token_diff && TK_REG_NAME == tokens[token_start].type) {  // TK_REG_NAME
+      Log("match TK_REG_NAME, eval pointer: *%s;", tokens[token_end].str);
+#if EXPR_UNIT_TEST_ENABLED
+      return 2;
+#else
+      // TODO: find reg
+      return -1;
+#endif
     } else
       assert(0);
   }
