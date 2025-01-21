@@ -19,6 +19,7 @@
  * Type 'man regex' for more information about POSIX regex functions.
  */
 #include <regex.h>
+#include <string.h>
 
 enum {
   TK_NOTYPE = 256,
@@ -36,7 +37,7 @@ static struct rule {
   const char *regex;
   int token_type;
 } rules[] = {
-  {" +", TK_NOTYPE},    // spaces
+  {"[ ]", TK_NOTYPE},    // spaces
   {"==", TK_EQ},        // equal
   {"\\+", TK_ADD},
   {"\\-", TK_SUB},
@@ -44,7 +45,7 @@ static struct rule {
   {"\\/", TK_DIVIDE},
   {"\\(", TK_OPENPARENTHESIS},
   {"\\)", TK_CLOSEPARENTHESIS},
-  {"\\d+", TK_NUMBER}
+  {"[1-9][0-9]*", TK_NUMBER}
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -102,15 +103,13 @@ static bool make_token(char *e) {
   while (e[position] != '\0') {
     /* Try all rules one by one. */
     for (i = 0; i < NR_REGEX; i ++) {
+      //printf("i:%d; regexec re:%d; rm_so:%d;\n", i, regexec(&re[i], e + position, 1, &pmatch, 0), pmatch.rm_so);
       if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
         char *substr_start = e + position;
         int substr_len = pmatch.rm_eo;
-
         Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
             i, rules[i].regex, position, substr_len, substr_len, substr_start);
-
         position += substr_len;
-
         switch (rules[i].token_type) {
           case TK_NUMBER:
             check_nr_valid();
@@ -126,6 +125,8 @@ static bool make_token(char *e) {
             check_nr_valid();
             tokens[nr_token].type = rules[i].token_type;
             nr_token++;
+            break;
+          case TK_NOTYPE:
             break;
           default: TODO();
         }
@@ -158,6 +159,10 @@ static inline bool check_parentheses(int token_start, int token_end)
         break;
     }
     token_end--;
+
+    // if inner start/end '()', we find ')' before '(', so we can't parse it.
+    if(parenthesis_num < 0)
+      return false;
   }
 
   if(parenthesis_num)
@@ -176,55 +181,81 @@ static inline int eval(int token_start, int token_end)
 
   // 1. 若表达式为数值，则返回数值
   if(token_start == token_end) {
-    if(TK_NUMBER == tokens[token_start].type)
+    if(TK_NUMBER == tokens[token_start].type) {
+      Log("match TK_NUMBER, eval return number:%s;", tokens[token_start].str);
       return atoi(tokens[token_start].str);
-    else
+    } else
       assert(0);
   }
 
   if(!check_parentheses(token_start, token_end))
     assert(0);
 
-  // 2. 若表达式前后只有正反括号，则解括号后调用递归函数处理内部
+  // 2. 若表达式前后只有正反括号，并且解括号后从前往后扫描总是先有'('再有对应的')', 则解括号后调用递归函数处理内部
   if(TK_OPENPARENTHESIS == tokens[token_start].type
-      && TK_CLOSEPARENTHESIS == tokens[token_end].type)
+      && TK_CLOSEPARENTHESIS == tokens[token_end].type
+      && check_parentheses(token_start + 1, token_end - 1)) {
+    Log("match TK_OPENPARENTHESIS/TK_CLOSEPARENTHESIS in start/end, parse inner expr;");
     return eval(token_start + 1, token_end - 1);
+  }
 
-  // 3、从token_end往token_start找符号
-  token_tmp = token_end;
+  // 从token_end往token_start找符号
+  token_tmp = token_end + 1;
   parenthesis_num = 0;
   while(token_tmp > token_start) {
     token_tmp--;
     switch(tokens[token_tmp].type) {
-      // 4、找到)后寻找对应的(并跳过中间表达式
-      case TK_CLOSEPARENTHESIS:
-        parenthesis_num++;
-        break;
+      // 找到)后寻找对应的(并跳过中间表达式
       case TK_OPENPARENTHESIS:
-        parenthesis_num--;
+        parenthesis_num++;
+        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
-      // 5、找到+或-后将符号先后进行分割并分别调用递归函数，并用+或-相连接
+      case TK_CLOSEPARENTHESIS:
+        parenthesis_num--;
+        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      // 找到+或-后将符号先后进行分割并分别调用递归函数，并用+或-相连接
       case TK_ADD:
         if(0 != parenthesis_num) continue;
+        Log("match TK_ADD, do eval call");
         return eval(token_start, token_tmp - 1) + eval(token_tmp + 1, token_end);
       case TK_SUB:
         if(0 != parenthesis_num) continue;
+        Log("match TK_SUB, do eval call");
         return eval(token_start, token_tmp - 1) - eval(token_tmp + 1, token_end);
-        break;
-      // 6、找到*或/后将符号先后进行分割并分别调用递归函数，并用*或/相连接
-      case TK_MULTIPLY:
-        if(0 != parenthesis_num) continue;
-        return eval(token_start, token_tmp - 1) * eval(token_tmp + 1, token_end);
-        break;
-      case TK_DIVIDE:
-        if(0 != parenthesis_num) continue;
-        return eval(token_start, token_tmp - 1) / eval(token_tmp + 1, token_end);
-        break;
       default:
         break;
     }
   }
-  
+
+  token_tmp = token_end + 1;
+  parenthesis_num = 0;
+  while(token_tmp > token_start) {
+    token_tmp--;
+    switch(tokens[token_tmp].type) {
+      // 找到)后寻找对应的(并跳过中间表达式
+      case TK_OPENPARENTHESIS:
+        parenthesis_num++;
+        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      case TK_CLOSEPARENTHESIS:
+        parenthesis_num--;
+        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      // 找到*或/后将符号先后进行分割并分别调用递归函数，并用*或/相连接
+      case TK_MULTIPLY:
+        if(0 != parenthesis_num) continue;
+        Log("match TK_MULTIPLY, do eval call");
+        return eval(token_start, token_tmp - 1) * eval(token_tmp + 1, token_end);
+      case TK_DIVIDE:
+        if(0 != parenthesis_num) continue;
+        Log("match TK_DIVIDE, do eval call");
+        return eval(token_start, token_tmp - 1) / eval(token_tmp + 1, token_end);
+      default:
+        break;
+    }
+  }
+
   // token_tmp <= token_start
   assert(0);
 
@@ -234,16 +265,15 @@ static inline int eval(int token_start, int token_end)
 
 word_t expr(char *e, bool *success) {
   int result;
+  *success = true;
 
   if (!make_token(e)) {
     *success = false;
     return 0;
   }
 
-  /* TODO: Insert codes to evaluate the expression. */
-  result = eval(0, nr_token);
+  // 0 ~ (nr_token-1)
+  result = eval(0, nr_token - 1);
 
-  printf("eval result:%d\n", result);
-
-  return 0;
+  return result;
 }

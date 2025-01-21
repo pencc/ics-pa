@@ -20,6 +20,8 @@
 #include <assert.h>
 #include <string.h>
 
+static int NUM_MAX = 1024;
+
 // this should be enough
 static char buf[65536] = {};
 static char code_buf[65536 + 128] = {}; // a little larger than `buf`
@@ -31,8 +33,46 @@ static char *code_format =
 "  return 0; "
 "}";
 
+// return random generated num, num < max
+static unsigned int choose(unsigned int max)
+{
+	return ((unsigned)rand()) % max;
+}
+
+static void gen(char expr)
+{
+	sprintf(buf + strlen(buf), "%c", expr);
+}
+
+static void gen_num()
+{
+	sprintf(buf + strlen(buf), "%u", choose(NUM_MAX));
+}
+
+static void gen_rand_op()
+{
+	switch(rand() % 4) {
+		case 0:
+			sprintf(buf + strlen(buf), "+");
+			break;
+		case 1:
+			sprintf(buf + strlen(buf), "-");
+			break;
+		case 2:
+			sprintf(buf + strlen(buf), "*");
+			break;
+		case 3:
+			sprintf(buf + strlen(buf), "/");
+			break;
+	}
+}
+
 static void gen_rand_expr() {
-  buf[0] = '\0';
+  switch (choose(3)) {
+    case 0: gen_num(); break;
+    case 1: gen('('); gen_rand_expr(); gen(')'); break;
+    default: gen_rand_expr(); gen_rand_op(); gen_rand_expr(); break;
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -44,6 +84,7 @@ int main(int argc, char *argv[]) {
   }
   int i;
   for (i = 0; i < loop; i ++) {
+	memset(buf, 0, sizeof(buf));
     gen_rand_expr();
 
     sprintf(code_buf, code_format, buf);
@@ -53,7 +94,7 @@ int main(int argc, char *argv[]) {
     fputs(code_buf, fp);
     fclose(fp);
 
-    int ret = system("gcc /tmp/.code.c -o /tmp/.expr");
+    int ret = system("gcc -Werror=overflow -Werror=div-by-zero /tmp/.code.c -o /tmp/.expr");
     if (ret != 0) continue;
 
     fp = popen("/tmp/.expr", "r");

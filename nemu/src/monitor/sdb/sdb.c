@@ -207,23 +207,69 @@ static int cmd_test_expr(char *args)
   bool success;
   size_t len = 0;
   ssize_t read;
+  int line_no = 0;
+  char *expr_result, *expr_str;
+  unsigned int result, need_result;
+  int ret = 0;
 
   file = fopen(file_path, "r");
   if (file == NULL)
   {
-    perror("cannot open: %s", file_path);
-    return 1;
+    perror("cannot open ./tools/gen-expr/build/input");
+    ret = -1;
+    goto ret;
   }
 
-  while ((read = getline(&line, &len, file)) != -1)
+  while ((read = getline(&line, &len, file)) > 0)
   {
-    printf("%s", line);
-    expr(line, &success);
+    line_no++;
+
+    line[read-1] = '\0';
+
+    printf("lineNo:%d;\n\n", line_no);
+
+    expr_result = strtok(line, " ");
+    if(NULL == expr_result) {
+      printf("wrong expr result:(%s)\n", line);
+      ret = -1;
+      goto readline_end;
+    }
+    need_result = atoi(expr_result);
+
+    expr_str = strtok(NULL, " ");
+    if(NULL == expr_str) {
+      printf("wrong expr str:(%s)\n", line);
+      ret = -1;
+      goto readline_end;
+    }
+
+    printf("\033[36mexpr:%s; start calc...\033[0m\n\n", expr_str);
+
+    result = expr(expr_str, &success);
+
+    printf("\ncalc:%u; expected:%u;\n\n", result, need_result);
+
+    if(result == need_result) {
+      printf("\n\033[32mcalc succeed!\033[0m\n\n");
+      printf("---------------------------------------------------------------\n");
+    } else {
+      printf("\n\033[31mcalc failed!\033[0m\n\n");
+      printf("---------------------------------------------------------------\n");
+      ret = -1;
+      goto readline_end;
+    }
+
+readline_end:
     free(line);
+    line = NULL;
+    if(-1 == ret)
+      break;
   }
 
+  printf("end-of-file\n");
   fclose(file);
-  return 0;
+ret:
+  return ret;
 }
 /* command implemetion end */
 
