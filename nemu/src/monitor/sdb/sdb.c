@@ -296,7 +296,10 @@ address, output N consecutive 4 bytes in hex form. (for example: x 10 $esp){x86 
 example: w *0x2000)",
      cmd_w},
     {"d", "d [N], delete the monitoring point with serial number N. (for example: d 2)", cmd_d},
-    {"test_expr", "read file from ./tools/gen-expr/build/input then calc expr line by line, you need do ($ ./gen-expr 100 > input) first", cmd_test_expr},
+    {"test_expr", "read file from ./tools/gen-expr/build/input then calc expr line by line, you need do as follows first:\n\
+            1) in src/monitor/sdb/expr.c, set EXPR_UNIT_TEST_ENABLED to 1 to enable reg/deref testcase. \n\
+            2) do ($ cp resource/input tools/gen-expr/build/) to use default testcase. \n\
+            3) do ($ ./gen-expr 100 > input) to run more testcase.", cmd_test_expr},
 };
 
 #define NR_CMD ARRLEN(cmd_table)

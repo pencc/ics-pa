@@ -1,5 +1,6 @@
 *.*
 *
+!resource/input
 !*/
 !Makefile
 !*.mk
