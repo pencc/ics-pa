@@ -24,7 +24,7 @@
 // For expr unit test, in this mode, special token will be set to a custom number, as follow:
 // ::TK_DEREF      = 1
 // ::TK_REG_NAME   = 2
-#define EXPR_UNIT_TEST_ENABLED 1
+#define EXPR_UNIT_TEST_ENABLED 0
 
 enum {
   TK_NOTYPE = 256,
