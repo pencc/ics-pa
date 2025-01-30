@@ -20,6 +20,7 @@
  */
 #include <regex.h>
 #include <string.h>
+#include <memory/vaddr.h>
 
 // For expr unit test, in this mode, special token will be set to a custom number, as follow:
 // ::TK_DEREF      = 1
@@ -208,8 +209,12 @@ static inline bool check_parentheses(int token_start, int token_end)
 
 static inline int eval(int token_start, int token_end)
 {
-  int token_tmp, parenthesis_num;
-  int token_diff;
+  int token_tmp = 0;
+  int parenthesis_num = 0;
+  int token_diff = 0;
+  bool ret_flag = true;
+  word_t ret_result = 0;
+  vaddr_t deref_addr = 0;
 
   if(token_start > token_end){
     assert(0);
@@ -231,16 +236,22 @@ static inline int eval(int token_start, int token_end)
 #if EXPR_UNIT_TEST_ENABLED
       return 1;
 #else
-      // TODO: find deref
-      return -1;
+      if(TK_NUMBER == tokens[token_end].type)
+        deref_addr = strtol(tokens[token_end].str, NULL, 10);
+      else
+        deref_addr = strtol(tokens[token_end].str, NULL, 16);
+      ret_result = vaddr_read(deref_addr, 1);
+      return ret_result;
 #endif
     } else if(0 == token_diff && TK_REG_NAME == tokens[token_start].type) {  // TK_REG_NAME
-      Log("match TK_REG_NAME, eval pointer: *%s;", tokens[token_end].str);
+      Log("match TK_REG_NAME, reg:%s;", tokens[token_end].str);
 #if EXPR_UNIT_TEST_ENABLED
       return 2;
 #else
-      // TODO: find reg
-      return -1;
+      isa_reg_str2val(tokens[token_end].str, &ret_flag);
+      if(ret_flag)
+        return ret_result;
+      assert(0); // TODO:
 #endif
     } else
       assert(0);
