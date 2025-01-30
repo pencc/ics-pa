@@ -29,6 +29,7 @@
 enum {
   TK_NOTYPE = 256,
   TK_EQ,
+  TK_AND,
   TK_ADD,
   TK_SUB,
   TK_MULTIPLY,
@@ -47,15 +48,16 @@ static struct rule {
 } rules[] = {
   {"[ ]", TK_NOTYPE},    // spaces
   {"==", TK_EQ},        // equal
+  {"&&", TK_AND},        // and
   {"\\+", TK_ADD},
   {"\\-", TK_SUB},
   {"\\*", TK_MULTIPLY},
   {"\\/", TK_DIVIDE},
   {"\\(", TK_OPENPARENTHESIS},
   {"\\)", TK_CLOSEPARENTHESIS},
-  {"[1-9][0-9]*", TK_NUMBER},
   {"0[xX][0-9a-fA-F]+", TK_HEX_NUMBER},
   {"\\$[a-zA-Z0-9]+", TK_REG_NAME},
+  {"(0|[1-9][0-9]*)", TK_NUMBER},
 };
 
 #define NR_REGEX ARRLEN(rules)
@@ -84,7 +86,7 @@ typedef struct token {
   char str[32];
 } Token;
 
-static Token tokens[32] __attribute__((used)) = {};
+static Token tokens[64] __attribute__((used)) = {};
 static int nr_token __attribute__((used))  = 0;
 
 static bool check_nr_valid()
@@ -131,6 +133,8 @@ static bool make_token(char *e) {
             tokens[nr_token].type = rules[i].token_type;
             nr_token++;
             break;
+          case TK_EQ:
+          case TK_AND:
           case TK_ADD:
           case TK_SUB:
           case TK_MULTIPLY:
@@ -138,7 +142,9 @@ static bool make_token(char *e) {
                              || TK_SUB == tokens[nr_token - 1].type
                              || TK_MULTIPLY == tokens[nr_token - 1].type
                              || TK_DIVIDE == tokens[nr_token - 1].type
-                             || TK_OPENPARENTHESIS == tokens[nr_token - 1].type) {
+                             || TK_OPENPARENTHESIS == tokens[nr_token - 1].type
+                             || TK_AND == tokens[nr_token - 1].type
+                             || TK_EQ == tokens[nr_token - 1].type) {
               Log("match (TK_DEREF) rules[%d] = \"%s\" at position %d with len %d: %.*s",
                    i, rules[i].regex, position, substr_len, substr_len, substr_start);
               check_nr_valid();
@@ -249,6 +255,35 @@ static inline int eval(int token_start, int token_end)
       && check_parentheses(token_start + 1, token_end - 1)) {
     Log("match TK_OPENPARENTHESIS/TK_CLOSEPARENTHESIS in start/end, parse inner expr;");
     return eval(token_start + 1, token_end - 1);
+  }
+
+  // 从token_end往token_start找符号
+  token_tmp = token_end + 1;
+  parenthesis_num = 0;
+  while(token_tmp > token_start) {
+    token_tmp--;
+    switch(tokens[token_tmp].type) {
+      // 找到)后寻找对应的(并跳过中间表达式
+      case TK_OPENPARENTHESIS:
+        parenthesis_num++;
+        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      case TK_CLOSEPARENTHESIS:
+        parenthesis_num--;
+        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      // 找到==或&&后将符号先后进行分割并分别调用递归函数，并用+或-相连接
+      case TK_EQ:
+        if(0 != parenthesis_num) continue;
+        Log("match TK_EQ, do eval call");
+        return eval(token_start, token_tmp - 1) == eval(token_tmp + 1, token_end);
+      case TK_AND:
+        if(0 != parenthesis_num) continue;
+        Log("match TK_AND, do eval call");
+        return eval(token_start, token_tmp - 1) && eval(token_tmp + 1, token_end);
+      default:
+        break;
+    }
   }
 
   // 从token_end往token_start找符号
