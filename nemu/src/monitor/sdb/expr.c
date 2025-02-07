@@ -212,7 +212,7 @@ static inline int eval(int token_start, int token_end)
   int token_tmp = 0;
   int parenthesis_num = 0;
   int token_diff = 0;
-  bool ret_flag = true;
+  bool ret_flag = false;
   word_t ret_result = 0;
   vaddr_t deref_addr = 0;
 
@@ -248,7 +248,8 @@ static inline int eval(int token_start, int token_end)
 #if EXPR_UNIT_TEST_ENABLED
       return 2;
 #else
-      isa_reg_str2val(tokens[token_end].str, &ret_flag);
+      // set reg_name param to {eax} rather than {$eax}
+      ret_result = isa_reg_str2val(tokens[token_end].str + 1, &ret_flag);
       if(ret_flag)
         return ret_result;
       assert(0); // TODO:

@@ -69,6 +69,57 @@ void isa_reg_display() {
   printf("\n\n");
 }
 
+bool __isa_reg_str2val(const char **reg, const char *s, word_t *reg_result)
+{
+  bool reg_found = false;
+  int reg_type = -1;
+  int i = 0;
+
+  // reg_type: 0-regsl  1-regsw  2-regsb
+  if(regsl == reg) {
+    reg_type = 0;
+  } else if(regsw == reg){
+    reg_type = 1;
+  } else if(regsb == reg) {
+    reg_type = 2;
+  } else {
+    return reg_found;
+  }
+
+  for (i = R_EAX; i <= R_EDI; i ++) {
+    if(!strcmp(s, reg[i])) {
+      reg_found = true;
+      break;
+    }
+    printf("reg not found\n");
+  }
+
+  if(reg_found) {
+    switch (reg_type)
+    {
+    case 0: // regsl
+      *reg_result = reg_l(i);
+      break;
+    case 1: // regsw
+      *reg_result = reg_w(i);
+      break;
+    case 2: // regsb
+      *reg_result = reg_b(i);
+      break;
+    }
+  }
+
+  return reg_found;
+}
+
 word_t isa_reg_str2val(const char *s, bool *success) {
-  return 0;
+  word_t result = -1;
+  *success = false;
+
+  if(__isa_reg_str2val(regsl, s, &result)
+      || __isa_reg_str2val(regsw, s, &result)
+      || __isa_reg_str2val(regsb, s, &result))
+    *success = true;
+
+  return result;
 }

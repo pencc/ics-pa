@@ -20,6 +20,7 @@
 #include "sdb.h"
 #include <memory/vaddr.h>
 #include <memory/paddr.h>
+#include <watchpoint.h>
 
 static int is_batch_mode = false;
 
@@ -55,10 +56,16 @@ static int _cmd_info_r()
 }
 
 // subcommand for cmd_info [info w]
+/**
+ * there's example in gdb:
+(gdb) info watch
+Num     Type           Disp Enb Address            What
+1       hw watchpoint  keep y                      x
+2       hw watchpoint  keep y                      x*2+3
+ */
 static int _cmd_info_w()
 {
-  // TODO:
-
+  list_and_show_wp();
   return 0;
 }
 
@@ -180,21 +187,43 @@ param_unsupported:
 
 static int cmd_p(char *args)
 {
-  // TODO:
+  word_t result = 0;
+  bool succeed_flag = false;
+
+  if (!args)
+    return -1;
+  
+  result = expr(args, &succeed_flag);
+  if(!succeed_flag)
+    return -1;
+
+  printf("\n%s = 0x%x;\n", args, result);
 
   return 0;
 }
 
 static int cmd_w(char *args)
 {
-  // TODO:
+  if (!args)
+    return -1;
+
+  add_wp(args);
 
   return 0;
 }
 
 static int cmd_d(char *args)
 {
-  // TODO:
+  int wp_no = -1;
+
+  if (!args)
+    return -1;
+  
+  wp_no = atoi(args);
+  if(0 == wp_no)
+    return -1;
+
+  delete_wp_by_no(wp_no);
 
   return 0;
 }
