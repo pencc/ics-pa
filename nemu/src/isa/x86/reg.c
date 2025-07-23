@@ -91,7 +91,6 @@ bool __isa_reg_str2val(const char **reg, const char *s, word_t *reg_result)
       reg_found = true;
       break;
     }
-    printf("reg not found\n");
   }
 
   if(reg_found) {

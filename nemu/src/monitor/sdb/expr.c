@@ -212,9 +212,11 @@ static inline int eval(int token_start, int token_end)
   int token_tmp = 0;
   int parenthesis_num = 0;
   int token_diff = 0;
+#if !EXPR_UNIT_TEST_ENABLED
+  vaddr_t deref_addr = 0;
   bool ret_flag = false;
   word_t ret_result = 0;
-  vaddr_t deref_addr = 0;
+#endif
 
   if(token_start > token_end){
     assert(0);
@@ -354,6 +356,37 @@ static inline int eval(int token_start, int token_end)
         break;
     }
   }
+
+  token_tmp = token_end + 1;
+  parenthesis_num = 0;
+  while(token_tmp > token_start) {
+    token_tmp--;
+    switch(tokens[token_tmp].type) {
+      // 找到)后寻找对应的(并跳过中间表达式
+      case TK_OPENPARENTHESIS:
+        parenthesis_num++;
+        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      case TK_CLOSEPARENTHESIS:
+        parenthesis_num--;
+        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        break;
+      // 找到*或/后将符号先后进行分割并分别调用递归函数，并用*或/相连接
+      case TK_DEREF:
+        if(0 != parenthesis_num) continue;
+        Log("match TK_DEREF, do eval call");
+#if EXPR_UNIT_TEST_ENABLED
+        return 1;
+#else
+        deref_addr = eval(token_tmp + 1, token_end);
+        ret_result = vaddr_read(deref_addr, 1);
+        return ret_result;
+#endif
+      default:
+        break;
+    }
+  }
+
 
   // token_tmp <= token_start
   assert(0);
