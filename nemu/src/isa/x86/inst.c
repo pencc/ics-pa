@@ -124,6 +124,12 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define RMr(reg, w)  (reg != -1 ? Rr(reg, w) : Mr(addr, w))
 #define RMw(data) do { if (rd != -1) Rw(rd, w, data); else Mw(addr, w, data); } while (0)
 
+#define Push(data, w) do { Rw(R_ESP, w, Rr(R_ESP, w) - w); Mw(Rr(R_ESP, w), w, data); } while(0)
+#define Pop(data, w) do { data = Mr(Rr(R_ESP, w), w); Rw(R_ESP, w, Rr(R_ESP, w) + w); } while(0)
+
+#define Call(data, w) do { Push(s->dnpc, w); s->dnpc += data; } while(0)
+#define Ret() do { Pop(s->dnpc, 4);} while(0)
+
 #define destr(r)  do { *rd_ = (r); } while (0)
 #define src1r(r)  do { *src1 = Rr(r, w); } while (0)
 #define imm()     do { *imm = x86_inst_fetch(s, w); } while (0)
@@ -143,6 +149,8 @@ enum {
   TYPE_SI_E2G,  // Gv <- EvIb / Gv <- EvIv // use for imul
   TYPE_Ib_G2E, // Ev <- GvIb // use for shld/shrd
   TYPE_cl_G2E, // Ev <- GvCL // use for shld/shrd
+  TYPE_Imm, // imm <- IMM
+  TYPE_r2M, // imm <- reg
   TYPE_N, // none
 };
 
@@ -156,6 +164,33 @@ enum {
   __VA_ARGS__ ; \
 }
 
+/**
+ * I: Immediate value
+ *    - 立即数（imm8/imm16/imm32），直接从指令字节流读取
+ *
+ * r: Register from opcode low bits
+ *    - 从 opcode 低 3 位直接编码出的寄存器（不是 ModR/M）
+ *    - 常见于单寄存器操作类指令，如 INC r32 (0x40+rd)
+ *
+ * G: General-purpose register (from ModR/M.reg)
+ *    - 来自 ModR/M 字节的 reg 字段
+ *    - 一定是通用寄存器（EAX~EDI）
+ *
+ * E: Effective Address (from ModR/M.r/m)
+ *    - 来自 ModR/M 字节的 r/m 字段
+ *    - 可能是通用寄存器，也可能是内存地址（需要 SIB/disp 计算）
+ *
+ * O: Offset (moffs)
+ *    - 绝对内存地址，直接在机器码中给出
+ *    - 例如 MOV AL, moffs8 / MOV EAX, moffs32
+ *
+ * A: Accumulator register
+ *    - 累加器寄存器 AL/AX/EAX
+ *    - Intel 语法中写作 "A"（A 是 accumulator 的缩写）
+ *
+ * M: Memory location only
+ *    - 操作数只能是内存（不允许寄存器）
+ */
 static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     word_t *addr, int *rs, int *gp_idx, word_t *imm, int w, int type) {
   switch (type) {
@@ -165,13 +200,49 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_I2E:  decode_rm(s, rd_, addr, gp_idx, w); imm(); break;
     case TYPE_O2a:  destr(R_EAX); *addr = x86_inst_fetch(s, 4); break;
     case TYPE_a2O:  *rs = R_EAX;  *addr = x86_inst_fetch(s, 4); break;
+    case TYPE_Imm:  *imm = x86_inst_fetch(s, 4); break;
+    case TYPE_r2M:  *imm = Rr(R_EAX + (opcode & 0xf), 4); break;
     case TYPE_N:    break;
     default: panic("Unsupported type = %d", type);
   }
 }
 
+/**
+ * SUB指令（减法指令）会根据运算结果修改EFLAGS 寄存器的值。具体来说，SUB指令会影响以下几个标志位：
+ * ZF (零标志位):如果运算结果为0，则ZF=1；否则，ZF=0。
+ * SF (符号标志位):如果运算结果为负，则SF=1；否则，SF=0。
+ * PF (奇偶标志位):如果运算结果的低8位中1的个数为偶数，则PF=1；否则，PF=0。
+ * CF (进位标志位):如果发生无符号运算的借位，则CF=1；否则，CF=0。
+ * OF (溢出标志位):如果发生有符号运算的溢出，则OF=1；否则，OF=0。
+ * AF ( m ):如果发生低4位到高4位的借位，则AF=1；否则，AF=0。
+ */
 #define gp1() do { \
   switch (gp_idx) { \
+    case 4:  \
+      if (rd != -1) { \
+        Rw(rd, 4, Rr(rd, 4) & (int32_t)(int8_t)imm); \
+      } else { \
+        Mw(addr, 4, Mr(addr, 4) & (int32_t)(int8_t)imm); \
+      } \
+      cpu.eflags.CF = 0; \
+      cpu.eflags.OF = 0; \
+      break; \
+    case 5:  \
+      int32_t dst = (rd!=-1 ? Rr(rd, 4) : Mr(addr, 4)); \
+      int32_t src = imm; \
+      int32_t calc_ret = dst - src; \
+      if (rd != -1) { \
+        Rw(rd, 4, calc_ret); \
+      } else { \
+        Mw(addr, 4, calc_ret); \
+      } \
+      cpu.eflags.ZF = (calc_ret == 0); \
+      cpu.eflags.SF = (calc_ret < 0); \
+      cpu.eflags.PF = (__builtin_parity(calc_ret & 0xff) == 0); \
+      cpu.eflags.CF = ((uint32_t)src > (uint32_t)dst); \
+      cpu.eflags.OF = (((dst ^ src) & (dst ^ calc_ret)) >> 31) & 1; \
+      cpu.eflags.AF = (((dst ^ src ^ calc_ret) & 0x10) != 0); \
+      break;  \
     default: INV(s->pc); \
   }; \
 } while (0)
@@ -213,6 +284,26 @@ again:
   INSTPAT("1100 0110", mov,       I2E,  1, RMw(imm));
   INSTPAT("1100 0111", mov,       I2E,  0, RMw(imm));
   INSTPAT("1100 1100", nemu_trap, N,    0, NEMUTRAP(s->pc, cpu.eax));
+
+  INSTPAT("0101 0???", push,      r2M,  0, Push(imm, 4));
+  INSTPAT("0110 1000", push,      Imm,  0, Push(imm, 4));
+  INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
+
+  // 83 /5 ib SUB r/m32,imm32
+  INSTPAT("1000 0001", gp1,       I2E,  4, gp1());
+  // 83 /5 ib SUB r/m32,imm8
+  INSTPAT("1000 0011", gp1,       I2E,  1, gp1());
+
+  // 83 /4 ib AND r/m32,imm8
+  INSTPAT("1000 0011", gp1,       I2E,  1, gp1());
+
+  // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
+  INSTPAT("0011 0001", xor,       G2E,  4, if (rd != -1) Rw(rd, 4, Rr(rd, 4) ^ src1); else Mw(addr, 4, Mr(addr, 4) ^ src1););
+
+  INSTPAT("1100 0011", ret,       N,    0, Ret());
+
+  INSTPAT("1000 1101", lea,       E2G,  0, Rw(rd, 4, addr));
+
   INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
   INSTPAT_END();
 

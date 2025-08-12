@@ -67,6 +67,10 @@ void isa_reg_display() {
   printf("esi:0x%x      ", cpu.esi);
   printf("edi:0x%x      ", cpu.edi);
   printf("\n\n");
+  printf("eflags  ZF:%d  SF:%d  SF:%d  CF:%d  OF:%d  AF:%d",
+            cpu.eflags.ZF, cpu.eflags.SF, cpu.eflags.SF,
+            cpu.eflags.CF, cpu.eflags.OF, cpu.eflags.AF);
+  printf("\n\n");
 }
 
 bool __isa_reg_str2val(const char **reg, const char *s, word_t *reg_result)
