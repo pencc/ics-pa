@@ -67,9 +67,9 @@ void isa_reg_display() {
   printf("esi:0x%x      ", cpu.esi);
   printf("edi:0x%x      ", cpu.edi);
   printf("\n\n");
-  printf("eflags  ZF:%d  SF:%d  SF:%d  CF:%d  OF:%d  AF:%d",
+  printf("eflags  ZF:%d  SF:%d  SF:%d  CF:%d  PF:%d  OF:%d  AF:%d",
             cpu.eflags.ZF, cpu.eflags.SF, cpu.eflags.SF,
-            cpu.eflags.CF, cpu.eflags.OF, cpu.eflags.AF);
+            cpu.eflags.CF, cpu.eflags.PF, cpu.eflags.OF, cpu.eflags.AF);
   printf("\n\n");
 }
 

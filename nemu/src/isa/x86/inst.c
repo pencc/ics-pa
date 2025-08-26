@@ -247,7 +247,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_O2a:  destr(R_EAX); *addr = x86_inst_fetch(s, 4); break;
     case TYPE_a2O:  *rs = R_EAX;  *addr = x86_inst_fetch(s, 4); break;
     case TYPE_Imm:  *imm = x86_inst_fetch(s, 4); break;
-    case TYPE_Imm8:  *imm = x86_inst_fetch(s, 1); break;
+    case TYPE_Imm8: *imm = x86_inst_fetch(s, 1); break;
     case TYPE_rA:   *imm = Rr(R_EAX + (opcode & 0xf), 4); break;
     case TYPE_N:    break;
     default: panic("Unsupported type = %d", type);
@@ -305,6 +305,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 // 83 /0 ib ADD r/m32,imm8 2/7 Add sign-extended immediate byte to r/m dword
 // 83 /4 ib AND r/m32,imm8 2/7 AND sign-extended immediate byte with r/m dword
 // 83 /5 ib SUB r/m32,imm8 2/7 Subtract sign-extended immediate byte from r/m dword
+// 83 /7 ib CMP r/m32,imm8 2/5 Compare sign extended immediate byte to r/m dword
 #define gp3() do { \
   switch (gp_idx) { \
     case 0:  \
@@ -341,13 +342,26 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       cpu.eflags.OF = (((dst ^ src) & (dst ^ calc_ret)) >> 31) & 1; \
       cpu.eflags.AF = (((dst ^ src ^ calc_ret) & 0x10) != 0); \
       break;  \
+    case 7:  \
+      int32_t lhs = (rd!=-1 ? Rr(rd, 4) : Mr(addr, 4)); \
+      int8_t rhs = imm; \
+      cmp_eflags_signextend_width(lhs, rhs, 4); \
+      break;  \
     default: INV(s->pc); \
   }; \
 } while (0)
 
-
 #define gp2() do { \
   switch (rd) { \
+    case 0:  \
+      int32_t rm32; \
+      uint32_t ef_cf; \
+      if (rs != -1) rm32 = Rr(rs, 4); else rm32 = Mr(addr, 4); \
+      ef_cf = cpu.eflags.CF; \
+      add_eflags_width(rm32, (int32_t)(int8_t)1, 4); \
+      cpu.eflags.CF = ef_cf; \
+      if (rs != -1) Rw(rs, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
+      break; \
     case 6:  \
       Push(Mr(addr, 4), 4); \
       break; \
@@ -381,17 +395,24 @@ again:
   INSTPAT("0011 0001", xor,       G2E,  4, if (rd != -1) Rw(rd, 4, Rr(rd, 4) ^ src1); else Mw(addr, 4, Mr(addr, 4) ^ src1););
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); });
-  
+
+  INSTPAT("0100 0???", inc,       N,    0, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, 4), (int32_t)(int8_t)1, 4); cpu.eflags.CF = ef_cf;; Rw(opcode & 0x0f, 4, Rr(opcode & 0x0f, 4) + 1); } );
+
   INSTPAT("0101 0???", push,      rA,   0, Push(imm, 4));
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
-  INSTPAT("0110 1000", push,      Imm,  0, Push(imm, 4));
+  // 68 PUSH imm32 2 Push immediate dword
+  INSTPAT("0110 1000", push32,    Imm,  0, Push(imm, 4));
+  // 6A PUSH imm8 2 Push immediate byte
+  INSTPAT("0110 1010", push8,     Imm8, 0, Push(imm, 1));
 
-  INSTPAT("0111 0100", je,        Imm8,  0, if(1 == cpu.eflags.ZF) jmp(imm););
+  INSTPAT("0111 0100", je,        Imm8, 0, if(1 == cpu.eflags.ZF) jmp((int8_t)imm););
+
+  // 75 cb JNE rel8 7+m,3 Jump short if not equal (ZF=0)
+  INSTPAT("0111 0101", jne,       Imm8, 0, if(0 == cpu.eflags.ZF) jmp((int8_t)imm););
 
   INSTPAT("1000 0000", gp1,       I2E,  1, gp1());
-//  INSTPAT("1000 0001", gp1,       I2E,  4, gp1());
-  INSTPAT("1000 0011", gp1,       I2E,  1, gp3());
+  INSTPAT("1000 0011", gp3,       I2E,  1, gp3());
   INSTPAT("1000 1000", mov,       G2E,  1, RMw(src1));
   INSTPAT("1000 1001", mov,       G2E,  0, RMw(src1));
   INSTPAT("1000 1010", mov,       E2G,  1, Rw(rd, w, RMr(rs, w)));
@@ -416,6 +437,7 @@ again:
   INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
 
   // FF /6 PUSH m32 5 Push memory dword
+  // FF  /0      INC r/m32                      Increment r/m dword by 1
   INSTPAT("1111 1111", gp2,       E2G,  1, gp2());
 
   INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
