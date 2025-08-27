@@ -124,8 +124,8 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define RMr(reg, w)  (reg != -1 ? Rr(reg, w) : Mr(addr, w))
 #define RMw(data) do { if (rd != -1) Rw(rd, w, data); else Mw(addr, w, data); } while (0)
 
-#define Push(data, w) do { Rw(R_ESP, w, Rr(R_ESP, w) - w); Mw(Rr(R_ESP, w), w, data); } while(0)
-#define Pop(data, w) do { data = Mr(Rr(R_ESP, w), w); Rw(R_ESP, w, Rr(R_ESP, w) + w); } while(0)
+#define Push(data, w) do { Rw(R_ESP, 4, Rr(R_ESP, 4) - 4); Mw(Rr(R_ESP, w), w, data); } while(0)
+#define Pop(data, w) do { data = Mr(Rr(R_ESP, w), w); Rw(R_ESP, 4, Rr(R_ESP, 4) + 4); } while(0)
 
 #define Call(data, w) do { Push(s->dnpc, w); s->dnpc += data; } while(0)
 #define LEAVE()  int32_t ebp_tmp; do { Rw(R_ESP, 4, Rr(R_EBP, 4)); Pop(ebp_tmp, 4); Rw(R_EBP, 4, ebp_tmp); } while(0)
@@ -248,7 +248,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_a2O:  *rs = R_EAX;  *addr = x86_inst_fetch(s, 4); break;
     case TYPE_Imm:  *imm = x86_inst_fetch(s, 4); break;
     case TYPE_Imm8: *imm = x86_inst_fetch(s, 1); break;
-    case TYPE_rA:   *imm = Rr(R_EAX + (opcode & 0xf), 4); break;
+    case TYPE_rA:   *imm = Rr(R_EAX + (opcode & 0x7), 4); break;
     case TYPE_N:    break;
     default: panic("Unsupported type = %d", type);
   }
@@ -392,13 +392,15 @@ again:
   INSTPAT("0000 1111", 2byte_esc, N,    0, _2byte_esc(s, is_operand_size_16));
 
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
-  INSTPAT("0011 0001", xor,       G2E,  4, if (rd != -1) Rw(rd, 4, Rr(rd, 4) ^ src1); else Mw(addr, 4, Mr(addr, 4) ^ src1););
+  INSTPAT("0011 0001", xor,       G2E,  4, if (rd != -1) Rw(rd, 4, Rr(rd, 4) ^ src1); else Mw(addr, 4, Mr(addr, 4) ^ src1); );
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
-  INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); });
+  INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
 
   INSTPAT("0100 0???", inc,       N,    0, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, 4), (int32_t)(int8_t)1, 4); cpu.eflags.CF = ef_cf;; Rw(opcode & 0x0f, 4, Rr(opcode & 0x0f, 4) + 1); } );
+  // 50 + rd    PUSH r32      2        Push register dword
+  INSTPAT("0101 0???", push_r32,  rA,   0, Push(imm, 4));
 
-  INSTPAT("0101 0???", push,      rA,   0, Push(imm, 4));
+  INSTPAT("0101 1???", pop_r32,   rA,   0, Pop(imm, 4)); // TODO:
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
   // 68 PUSH imm32 2 Push immediate dword
@@ -414,23 +416,23 @@ again:
   INSTPAT("1000 0000", gp1,       I2E,  1, gp1());
   INSTPAT("1000 0011", gp3,       I2E,  1, gp3());
   INSTPAT("1000 1000", mov,       G2E,  1, RMw(src1));
-  INSTPAT("1000 1001", mov,       G2E,  0, RMw(src1));
+  INSTPAT("1000 1001", mov,       G2E,  4, RMw(src1));
   INSTPAT("1000 1010", mov,       E2G,  1, Rw(rd, w, RMr(rs, w)));
-  INSTPAT("1000 1011", mov,       E2G,  0, Rw(rd, w, RMr(rs, w)));
-  INSTPAT("1000 1101", lea,       E2G,  0, Rw(rd, 4, addr));
+  INSTPAT("1000 1011", mov,       E2G,  4, Rw(rd, w, RMr(rs, w)));
+  INSTPAT("1000 1101", lea,       E2G,  4, Rw(rd, 4, addr));
 
 
   INSTPAT("1010 0000", mov,       O2a,  1, Rw(R_EAX, 1, Mr(addr, 1)));
-  INSTPAT("1010 0001", mov,       O2a,  0, Rw(R_EAX, w, Mr(addr, w)));
+  INSTPAT("1010 0001", mov,       O2a,  4, Rw(R_EAX, w, Mr(addr, w)));
   INSTPAT("1010 0010", mov,       a2O,  1, Mw(addr, 1, Rr(R_EAX, 1)));
-  INSTPAT("1010 0011", mov,       a2O,  0, Mw(addr, w, Rr(R_EAX, w)));
+  INSTPAT("1010 0011", mov,       a2O,  4, Mw(addr, w, Rr(R_EAX, w)));
 
   INSTPAT("1011 0???", mov,       I2r,  1, Rw(rd, 1, imm));
-  INSTPAT("1011 1???", mov,       I2r,  0, Rw(rd, w, imm));
+  INSTPAT("1011 1???", mov,       I2r,  4, Rw(rd, w, imm));
 
   INSTPAT("1100 0011", ret,       N,    0, Ret());
   INSTPAT("1100 0110", mov,       I2E,  1, RMw(imm));
-  INSTPAT("1100 0111", mov,       I2E,  0, RMw(imm));
+  INSTPAT("1100 0111", mov,       I2E,  4, RMw(imm));
   INSTPAT("1100 1001", leave,     N,    0, LEAVE());
   INSTPAT("1100 1100", nemu_trap, N,    0, NEMUTRAP(s->pc, cpu.eax));
 
