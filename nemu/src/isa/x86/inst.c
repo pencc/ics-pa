@@ -157,6 +157,44 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
     cpu.eflags.OF = ((((dst) ^ (src)) & msb) == 0 && (((dst) ^ res) & msb) != 0); \
 } while (0)
 
+#define xor_eflags_width(dst, src, width) do { \
+    uint32_t mask = (width == 4 ? 0xFFFFFFFF : (width == 2 ? 0xFFFF : 0xFF)); \
+    uint32_t res = ((dst) ^ (src)) & mask; \
+    uint32_t msb = 1U << (width * 8 - 1); \
+    \
+    /* CF: XOR 不产生进位，永远置 0 */ \
+    cpu.eflags.CF = 0; \
+    /* OF: XOR 不可能溢出，永远置 0 */ \
+    cpu.eflags.OF = 0; \
+    /* ZF: 结果为 0 */ \
+    cpu.eflags.ZF = (res == 0); \
+    /* SF: 最高位符号 */ \
+    cpu.eflags.SF = (res & msb) != 0; \
+    /* PF: 低 8 位 1 的个数偶数 */ \
+    cpu.eflags.PF = (__builtin_parity(res & 0xFF) == 0); \
+    /* AF: 官方文档说 undefined，模拟器可直接不管，置 0 */ \
+    cpu.eflags.AF = 0; \
+} while (0)
+
+#define or_eflags_width(dst, src, width) do { \
+    uint32_t mask = (width == 4 ? 0xFFFFFFFF : (width == 2 ? 0xFFFF : 0xFF)); \
+    uint32_t res = ((dst) | (src)) & mask; \
+    uint32_t msb = 1U << (width * 8 - 1); \
+    \
+    /* CF: OR 不产生进位，永远置 0 */ \
+    cpu.eflags.CF = 0; \
+    /* OF: OR 不可能溢出，永远置 0 */ \
+    cpu.eflags.OF = 0; \
+    /* ZF: 结果为 0 */ \
+    cpu.eflags.ZF = (res == 0); \
+    /* SF: 最高位符号 */ \
+    cpu.eflags.SF = (res & msb) != 0; \
+    /* PF: 低 8 位 1 的个数偶数 */ \
+    cpu.eflags.PF = (__builtin_parity(res & 0xFF) == 0); \
+    /* AF: undefined，模拟器里直接置 0 */ \
+    cpu.eflags.AF = 0; \
+} while (0)
+
 /* The above code defines a macro `cmp_eflags` that compares two values `lhs` and `rhs` and sets the
 CPU flags (CF, ZF, SF, PF, AF, OF) based on the result of the comparison. */
 // lhs（left-hand side）/ rhs（right-hand side）
@@ -389,10 +427,21 @@ again:
 
   // 01 /r ADD r/m32,r32 2/7 Add dword register to r/m dword
   INSTPAT("0000 0001", add,       G2E,  4, if (rd != -1) { add_eflags_width(Rr(rd, 4), src1, 4); Rw(rd, 4, Rr(rd, 4) + src1); } else { add_eflags_width(Mr(addr, 4), src1, 4); Mw(addr, 4, Mr(addr, 4) + src1); } );
+  // 03 /r     ADD r32,r/m32        2/6      Add r/m dword to dword register
+  INSTPAT("0000 0011", add,       E2G,  4, uint32_t tmp_rs, tmp_rd; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd, 4); Rw(rd, 4, tmp_rs + tmp_rd););
+  
+  // 09  /r       OR r/m32,r32      2/6       OR dword register to r/m dword
+  INSTPAT("0000 1001", or,        G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val | src1); or_eflags_width(rm_val, src1, 4););
+
   INSTPAT("0000 1111", 2byte_esc, N,    0, _2byte_esc(s, is_operand_size_16));
 
+  INSTPAT("0001 0011", adc,       E2G,  4,  uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, 4); Rw(rd, 4, tmp_rs + tmp_rd + tmp_cf););
+
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
-  INSTPAT("0011 0001", xor,       G2E,  4, if (rd != -1) Rw(rd, 4, Rr(rd, 4) ^ src1); else Mw(addr, 4, Mr(addr, 4) ^ src1); );
+  INSTPAT("0011 0001", xor,       G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val ^ src1); xor_eflags_width(rm_val, src1, 4); );
+  // 33  /r      XOR r32,r/m32    2/7      Exclusive-OR r/m dword to dword register
+  INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4); );
+
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
 
@@ -400,7 +449,7 @@ again:
   // 50 + rd    PUSH r32      2        Push register dword
   INSTPAT("0101 0???", push_r32,  rA,   0, Push(imm, 4));
 
-  INSTPAT("0101 1???", pop_r32,   rA,   0, Pop(imm, 4)); // TODO:
+  INSTPAT("0101 1???", pop_r32,   rA,   0, Pop(imm, 4));
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
   // 68 PUSH imm32 2 Push immediate dword
