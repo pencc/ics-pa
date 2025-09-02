@@ -139,22 +139,25 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define simm(w)   do { *imm = SEXT(x86_inst_fetch(s, w), w * 8); } while (0)
 
 #define add_eflags_width(dst, src, width) do { \
-    uint32_t mask = (width == 4 ? 0xFFFFFFFF : (width == 2 ? 0xFFFF : 0xFF)); \
-    uint32_t res = ((dst) + (src)) & mask; \
-    uint32_t msb = 1U << (width * 8 - 1); \
+    uint32_t mask = (width == 1) ? 0xFF : (width == 2) ? 0xFFFF : 0xFFFFFFFF; \
+    uint64_t a_u = (dst) & mask; \
+    uint64_t b_u = (src) & mask; \
+    uint64_t res_u = (a_u + b_u); \
+    uint32_t res = res_u & mask; \
+    uint32_t msb = 1u << (width * 8 - 1); \
     \
-    /* CF: 无符号进位 */ \
-    cpu.eflags.CF = (((dst) & mask) + ((src) & mask)) > mask; \
+    /* CF: 无符号进位 (res 超过 mask) */ \
+    cpu.eflags.CF = (res_u > mask); \
     /* ZF: 结果为 0 */ \
     cpu.eflags.ZF = (res == 0); \
-    /* SF: 最高位符号 */ \
+    /* SF: 符号位 */ \
     cpu.eflags.SF = (res & msb) != 0; \
     /* PF: 低 8 位 1 的个数偶数 */ \
     cpu.eflags.PF = (__builtin_parity(res & 0xFF) == 0); \
-    /* AF: 检查低 nibble */ \
-    cpu.eflags.AF = (((dst) ^ (src) ^ res) >> 4) & 1; \
+    /* AF: nibble carry */ \
+    cpu.eflags.AF = (((a_u ^ b_u ^ res) >> 4) & 1); \
     /* OF: 有符号溢出 */ \
-    cpu.eflags.OF = ((((dst) ^ (src)) & msb) == 0 && (((dst) ^ res) & msb) != 0); \
+    cpu.eflags.OF = ((((a_u ^ b_u) & msb) == 0) && (((a_u ^ res) & msb) != 0)); \
 } while (0)
 
 #define xor_eflags_width(dst, src, width) do { \
@@ -440,7 +443,7 @@ again:
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
   INSTPAT("0011 0001", xor,       G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val ^ src1); xor_eflags_width(rm_val, src1, 4); );
   // 33  /r      XOR r32,r/m32    2/7      Exclusive-OR r/m dword to dword register
-  INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4); );
+  INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4););
 
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
