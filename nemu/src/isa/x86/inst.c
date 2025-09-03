@@ -221,6 +221,28 @@ CPU flags (CF, ZF, SF, PF, AF, OF) based on the result of the comparison. */
     cpu.eflags.OF = (((a_u ^ b_u) & (a_u ^ res_u) & sign_bit) != 0); \
 } while (0)
 
+#define sub_eflags_width(dst, src, width) do { \
+    uint32_t mask = (width == 1) ? 0xFF : (width == 2) ? 0xFFFF : 0xFFFFFFFF; \
+    uint64_t a_u = (dst) & mask; \
+    uint64_t b_u = (src) & mask; \
+    uint64_t res_u = (a_u - b_u); \
+    uint32_t res = res_u & mask; \
+    uint32_t msb = 1u << (width * 8 - 1); \
+    \
+    /* CF: 无符号借位 (dst < src) */ \
+    cpu.eflags.CF = (a_u < b_u); \
+    /* ZF: 结果为 0 */ \
+    cpu.eflags.ZF = (res == 0); \
+    /* SF: 符号位 */ \
+    cpu.eflags.SF = (res & msb) != 0; \
+    /* PF: 低 8 位 1 的个数偶数 */ \
+    cpu.eflags.PF = (__builtin_parity(res & 0xFF) == 0); \
+    /* AF: 第 4 位借位 (来自 dst^src^res trick) */ \
+    cpu.eflags.AF = (((a_u ^ b_u ^ res) >> 4) & 1); \
+    /* OF: 有符号溢出 */ \
+    cpu.eflags.OF = (((a_u ^ b_u) & (a_u ^ res) & msb) != 0); \
+} while (0)
+
 enum {
   TYPE_r, TYPE_I, TYPE_SI, TYPE_J, TYPE_E,
   TYPE_I2r,  // XX <- Ib / eXX <- Iv
@@ -327,12 +349,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       } else { \
         Mw(addr, 1, calc_ret); \
       } \
-      cpu.eflags.ZF = (calc_ret == 0); \
-      cpu.eflags.SF = (calc_ret < 0); \
-      cpu.eflags.PF = (__builtin_parity(calc_ret & 0xff) == 0); \
-      cpu.eflags.CF = ((uint32_t)src > (uint32_t)dst); \
-      cpu.eflags.OF = (((dst ^ src) & (dst ^ calc_ret)) >> 31) & 1; \
-      cpu.eflags.AF = (((dst ^ src ^ calc_ret) & 0x10) != 0); \
+      sub_eflags_width(dst, src, 1); \
       break;  \
       case 7:  \
         int8_t lhs = (rd!=-1 ? Rr(rd, 1) : Mr(addr, 1)); \
@@ -442,6 +459,12 @@ again:
 
   INSTPAT("0001 0011", adc,       E2G,  4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, 4); Rw(rd, 4, tmp_rs + tmp_rd + tmp_cf););
 
+  // 1B  /r       SBB r32,r/m32     2/7     Subtract with borrow r/m dword from dword register
+  INSTPAT("0001 1011", sbb,       E2G,  4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, 4); tmp_src = RMr(rs, 4); Rw(rd, 4, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, 4););
+
+  // 2B  /r      SUB r32,r/m32    2/7      Subtract r/m dword from dword
+  INSTPAT("0010 1011", sub_r32_rm32, E2G, 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, 4); tmp_src = RMr(rs, 4); Rw(rd, 4, tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, 4););
+
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
   INSTPAT("0011 0001", xor,       G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val ^ src1); xor_eflags_width(rm_val, src1, 4); );
   // 33  /r      XOR r32,r/m32    2/7      Exclusive-OR r/m dword to dword register
@@ -458,6 +481,7 @@ again:
   INSTPAT("0101 1???", pop_r32,   N,    0, uint32_t val; Pop(val, 4); Rw(R_EAX + (opcode & 0x7), 4, val););
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
+
   // 68 PUSH imm32 2 Push immediate dword
   INSTPAT("0110 1000", push32,    Imm,  0, Push(imm, 4));
   // 6A PUSH imm8 2 Push immediate byte
@@ -477,7 +501,6 @@ again:
 
   // 8D  /r  LEA r32,m    2       Store effective address for m in register r32
   INSTPAT("1000 1101", lea,       E2G,  4, Rw(rd, 4, addr));
-
 
   INSTPAT("1010 0000", mov,       O2a,  1, Rw(R_EAX, 1, Mr(addr, 1)));
   INSTPAT("1010 0001", mov,       O2a,  4, Rw(R_EAX, w, Mr(addr, w)));
