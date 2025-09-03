@@ -392,6 +392,8 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// FF   /6    PUSH r/m32      5        Push memory dword
+// FF  /0      INC r/m32                      Increment r/m dword by 1
 #define gp2() do { \
   switch (rd) { \
     case 0:  \
@@ -404,7 +406,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       if (rs != -1) Rw(rs, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
       break; \
     case 6:  \
-      Push(Mr(addr, 4), 4); \
+      Push(RMr(rs, 4), 4); \
       break; \
     default: INV(s->pc); \
   }; \
@@ -438,7 +440,7 @@ again:
 
   INSTPAT("0000 1111", 2byte_esc, N,    0, _2byte_esc(s, is_operand_size_16));
 
-  INSTPAT("0001 0011", adc,       E2G,  4,  uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, 4); Rw(rd, 4, tmp_rs + tmp_rd + tmp_cf););
+  INSTPAT("0001 0011", adc,       E2G,  4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, 4); Rw(rd, 4, tmp_rs + tmp_rd + tmp_cf););
 
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
   INSTPAT("0011 0001", xor,       G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val ^ src1); xor_eflags_width(rm_val, src1, 4); );
@@ -452,7 +454,8 @@ again:
   // 50 + rd    PUSH r32      2        Push register dword
   INSTPAT("0101 0???", push_r32,  rA,   0, Push(imm, 4));
 
-  INSTPAT("0101 1???", pop_r32,   rA,   0, Pop(imm, 4));
+  // 58 + rd     POP r32       4          Pop top of stack into dword register
+  INSTPAT("0101 1???", pop_r32,   N,    0, uint32_t val; Pop(val, 4); Rw(R_EAX + (opcode & 0x7), 4, val););
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
   // 68 PUSH imm32 2 Push immediate dword
@@ -471,6 +474,8 @@ again:
   INSTPAT("1000 1001", mov,       G2E,  4, RMw(src1));
   INSTPAT("1000 1010", mov,       E2G,  1, Rw(rd, w, RMr(rs, w)));
   INSTPAT("1000 1011", mov,       E2G,  4, Rw(rd, w, RMr(rs, w)));
+
+  // 8D  /r  LEA r32,m    2       Store effective address for m in register r32
   INSTPAT("1000 1101", lea,       E2G,  4, Rw(rd, 4, addr));
 
 
@@ -490,8 +495,6 @@ again:
 
   INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
 
-  // FF /6 PUSH m32 5 Push memory dword
-  // FF  /0      INC r/m32                      Increment r/m dword by 1
   INSTPAT("1111 1111", gp2,       E2G,  1, gp2());
 
   INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
