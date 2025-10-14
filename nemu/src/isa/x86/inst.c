@@ -456,6 +456,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 // C1   /5 ib      SHR r/m32,imm8    3/7     Unsigned divide r/m dword by 2, imm8 times
 // C1   /7 ib      SAR r/m32,imm8    3/7     Signed divide^(1) r/m dword by 2, imm8 times
 #define gp4() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
     case 4:  { \
       uint32_t rd_val, rd_val_shift; \
@@ -523,6 +524,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
  *  (The 8086 uses all eight bits of the shift count.)
  */
 #define gp5() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
     case 4:  { \
       uint32_t rd_val, rd_val_shift; \
