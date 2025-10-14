@@ -742,8 +742,17 @@ again:
   // 23 /r     AND r32,r/m32        2/6       AND r/m dword to dword register
   INSTPAT("0010 0011", and,       E2G,  4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); Rw(rd, w, tmp_dst & tmp_src));
 
+  // 28  /r      SUB r/m8,r8      2/6      Subtract byte register from r/m byte
+  INSTPAT("0010 1000", sub_rm8_r8,   G2E, 1, uint8_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); RMw(tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, w););
+
+  // 29  /r      SUB r/m32,r32    2/6      Subtract dword register from r/m dword
+  INSTPAT("0010 1001", sub_rm32_r32, G2E, is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); RMw(tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, w););
+
+  // 2A  /r      SUB r8,r/m8      2/7      Subtract r/m byte from byte register
+  INSTPAT("0010 1010", sub_r8_rm8,   E2G, 1, uint8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, w););
+
   // 2B  /r      SUB r32,r/m32    2/7      Subtract r/m dword from dword
-  INSTPAT("0010 1011", sub_r32_rm32, E2G, 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, 4); tmp_src = RMr(rs, 4); Rw(rd, 4, tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, 4););
+  INSTPAT("0010 1011", sub_r32_rm32, E2G, is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, w););
 
   // 31 /r XOR r/m32,r32 2/6 Exclusive-OR dword register to r/m dword (general-purpose register to effective address)
   INSTPAT("0011 0001", xor,       G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val ^ src1); xor_eflags_width(rm_val, src1, 4); );
@@ -817,6 +826,11 @@ again:
   INSTPAT("1101 0011", gp5,       X2E,  1, gp5());
 
   INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
+
+  // E9  cd    JMP rel32       7+m             Jump near, displacement relative to next instruction
+  INSTPAT("1110 1001", jmp32,     Imm,  is_operand_size_16==true ? 2 : 4, if(w == 2) jmp((int16_t)imm); else jmp((int32_t)imm););
+  // EB  cb    JMP rel8        7+m             Jump short
+  INSTPAT("1110 1011", jmp8,      Imm8, 0, jmp((int8_t)imm));
 
   // F6
   INSTPAT("1111 0110", not8,      X2E,  1, gp6());
