@@ -131,6 +131,8 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define LEAVE()  int32_t ebp_tmp; do { Rw(R_ESP, 4, Rr(R_EBP, 4)); Pop(ebp_tmp, 4); Rw(R_EBP, 4, ebp_tmp); } while(0)
 #define Ret() do { Pop(s->dnpc, 4); } while(0)
 
+#define nop() do {  } while(0)
+
 #define jmp(target) do { s->dnpc += target; } while(0)
 
 #define destr(r)  do { *rd_ = (r); } while (0)
@@ -371,6 +373,26 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// FF   /6    PUSH r/m32      5        Push memory dword
+// FF  /0      INC r/m32                      Increment r/m dword by 1
+#define gp2() do { \
+  switch (gp_idx) { \
+    case 0:  \
+      int32_t rm32; \
+      uint32_t ef_cf; \
+      if (rd != -1) rm32 = Rr(rd, 4); else rm32 = Mr(addr, 4); \
+      ef_cf = cpu.eflags.CF; \
+      add_eflags_width(rm32, (int32_t)(int8_t)1, 4); \
+      cpu.eflags.CF = ef_cf; \
+      if (rd != -1) Rw(rd, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
+      break; \
+    case 6:  \
+      Push(RMr(rd, 4), 4); \
+      break; \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
 // 83 /0 ib ADD r/m32,imm8 2/7 Add sign-extended immediate byte to r/m dword
 // 83 /4 ib AND r/m32,imm8 2/7 AND sign-extended immediate byte with r/m dword
 // 83 /5 ib SUB r/m32,imm8 2/7 Subtract sign-extended immediate byte from r/m dword
@@ -553,34 +575,136 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
-// FF   /6    PUSH r/m32      5        Push memory dword
-// FF  /0      INC r/m32                      Increment r/m dword by 1
-#define gp2() do { \
-  switch (rd) { \
-    case 0:  \
-      int32_t rm32; \
-      uint32_t ef_cf; \
-      if (rs != -1) rm32 = Rr(rs, 4); else rm32 = Mr(addr, 4); \
-      ef_cf = cpu.eflags.CF; \
-      add_eflags_width(rm32, (int32_t)(int8_t)1, 4); \
-      cpu.eflags.CF = ef_cf; \
-      if (rs != -1) Rw(rs, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
+// F6  /2      NOT r/m8        2/6          Reverse each bit of r/m byte
+// F6  /4      MUL AL,r/m8     9-14/12-17   Unsigned multiply (AX := AL * r/m byte)
+// F6  /5      IMUL r/m8       9-14/12-17   AX= AL * r/m byte
+// F6  /6      DIV AL,r/m8     14/17        Unsigned divide AX by r/m byte (AL=Quo, AH=Rem)
+// F6  /7      IDIV r/m8       19           Signed divide AX by r/m byte (AL=Quo, AH=Rem)
+#define gp6() do { \
+  uint8_t rm8 = (rd != -1 ? Rr(rd, 1) : Mr(addr, 1)); \
+  switch (gp_idx) { \
+    case 2: { \
+      rm8 = ~rm8; \
+      if(rd != -1) \
+        Rw(rd, 1, rm8); \
+      else \
+        Mw(addr, 1, rm8); \
       break; \
-    case 6:  \
-      Push(RMr(rs, 4), 4); \
+    } \
+    case 4: { /* MUL r/m8 → AX = AL * r/m8 */ \
+      uint16_t res = (uint16_t)(cpu.gpr[R_AL]._8[0]) * (uint16_t)rm8; \
+      cpu.gpr[R_AL]._8[0] = res & 0xff; \
+      cpu.gpr[R_AH]._8[0] = (res >> 8) & 0xff; \
+      cpu.eflags.CF = cpu.eflags.OF = ((res >> 8) != 0); \
       break; \
+    } \
+    case 5: { /* IMUL r/m8 → AX = AL * r/m8 (有符号) */ \
+      int16_t res = (int16_t)((int8_t)cpu.gpr[R_AL]._8[0] * (int8_t)rm8); \
+      cpu.gpr[R_AL]._8[0] = res & 0xff; \
+      cpu.gpr[R_AH]._8[0] = (res >> 8) & 0xff; \
+      cpu.eflags.CF = cpu.eflags.OF = (((res >> 7) != 0) && ((res >> 7) != -1)); \
+      break; \
+    } \
+    case 6: { /* DIV r/m8 → AX / r/m8 */ \
+      uint16_t dividend = ((uint16_t)cpu.gpr[R_AH]._8[0] << 8) | cpu.gpr[R_AL]._8[0]; \
+      if (rm8 == 0) INV(s->pc); \
+      uint8_t quo = dividend / rm8; \
+      uint8_t rem = dividend % rm8; \
+      cpu.gpr[R_AL]._8[0] = quo; \
+      cpu.gpr[R_AH]._8[0] = rem; \
+      break; \
+    } \
+    case 7: { /* IDIV r/m8 → AX / r/m8 (有符号) */ \
+      int16_t dividend = ((int16_t)((cpu.gpr[R_AH]._8[0] << 8) | cpu.gpr[R_AL]._8[0])); \
+      int8_t divisor = (int8_t)rm8; \
+      if (divisor == 0) INV(s->pc); \
+      int8_t quo = dividend / divisor; \
+      int8_t rem = dividend % divisor; \
+      cpu.gpr[R_AL]._8[0] = quo; \
+      cpu.gpr[R_AH]._8[0] = rem; \
+      break; \
+    } \
     default: INV(s->pc); \
   }; \
 } while (0)
 
+// F7  /2      NOT r/m32        2/6         Reverse each bit of r/m dword
+// F7  /4      MUL EAX,r/m32    9-38/12-41  Unsigned multiply (EDX:EAX := EAX * r/m dword)
+// F7  /5      IMUL r/m32       9-38/12-41  EDX:EAX := EAX * r/m dword
+// F7  /6      DIV EAX,r/m32    38/41       Unsigned divide EDX:EAX by r/m dword (EAX=Quo, EDX=Rem)
+// F7  /7      IDIV EAX,r/m32   43          Signed divide EDX:EAX by DWORD byte (EAX=Quo, EDX=Rem)
+#define gp7() do { \
+  uint32_t rm32 = (rd != -1 ? Rr(rd, 4) : Mr(addr, 4)); \
+  switch (gp_idx) { \
+    case 2: { \
+      rm32 = ~rm32; \
+      if(rd != -1) \
+        Rw(rd, 4, rm32); \
+      else \
+        Mw(addr, 4, rm32); \
+      break; \
+    } \
+    case 4: { /* MUL EAX, r/m32 → EDX:EAX = EAX * r/m32 (无符号) */ \
+      uint64_t res = (uint64_t)cpu.gpr[R_EAX]._32 * (uint64_t)rm32; \
+      cpu.gpr[R_EAX]._32 = (uint32_t)(res & 0xffffffff); \
+      cpu.gpr[R_EDX]._32 = (uint32_t)(res >> 32); \
+      cpu.eflags.CF = cpu.eflags.OF = (cpu.gpr[R_EDX]._32 != 0); \
+      break; \
+    } \
+    case 5: { /* IMUL r/m32 → EDX:EAX = EAX * r/m32 (有符号) */ \
+      int64_t res = (int64_t)(int32_t)cpu.gpr[R_EAX]._32 * (int64_t)(int32_t)rm32; \
+      cpu.gpr[R_EAX]._32 = (uint32_t)(res & 0xffffffff); \
+      cpu.gpr[R_EDX]._32 = (uint32_t)((res >> 32) & 0xffffffff); \
+      /* CF, OF = 1 if upper 32 bits ≠ sign extension of lower 32 bits */ \
+      uint64_t sign_ext = (cpu.gpr[R_EAX]._32 & 0x80000000) ? 0xffffffffULL : 0ULL; \
+      cpu.eflags.CF = cpu.eflags.OF = ((uint32_t)cpu.gpr[R_EDX]._32 != (uint32_t)sign_ext); \
+      break; \
+    } \
+    case 6: { /* DIV EAX, r/m32 → EAX=Quo, EDX=Rem (无符号) */ \
+      uint64_t dividend = ((uint64_t)cpu.gpr[R_EDX]._32 << 32) | cpu.gpr[R_EAX]._32; \
+      if (rm32 == 0) INV(s->pc); \
+      uint32_t quo = dividend / rm32; \
+      uint32_t rem = dividend % rm32; \
+      cpu.gpr[R_EAX]._32 = quo; \
+      cpu.gpr[R_EDX]._32 = rem; \
+      break; \
+    } \
+    case 7: { /* IDIV EAX, r/m32 → EAX=Quo, EDX=Rem (有符号) */ \
+      int64_t dividend = ((int64_t)((uint64_t)cpu.gpr[R_EDX]._32 << 32) | cpu.gpr[R_EAX]._32); \
+      int32_t divisor = (int32_t)rm32; \
+      if (divisor == 0) INV(s->pc); \
+      int64_t quo = dividend / divisor; \
+      int64_t rem = dividend % divisor; \
+      /* 检查是否溢出（商必须可放进 32 位） */ \
+      if (quo < INT32_MIN || quo > INT32_MAX) INV(s->pc); \
+      cpu.gpr[R_EAX]._32 = (uint32_t)quo; \
+      cpu.gpr[R_EDX]._32 = (uint32_t)rem; \
+      break; \
+    } \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
+
+
 // 0F  94   SETE r/m8    4/5     Set byte if equal (ZF=1)
 // 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
+// 0F  AF /r   IMUL r32,r/m32         9-38/12-41  dword register := dword register * r/m dword
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
   INSTPAT("1001 0100", sete,    E2G,    1, if (rs != -1) Rw(rs, w, (1 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
   INSTPAT("1001 0101", setne,   E2G,    1, if (rs != -1) Rw(rs, w, (0 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
   INSTPAT("1011 0110", movzx,   E2G,    4, if (rs != -1) Rw(rd, 4, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, 4, (uint32_t)(uint8_t)Mr(addr, 1)););
+  INSTPAT("1010 1111", imul,    E2G,    is_operand_size_16==true ? 2 : 4, uint32_t src, dst; int64_t res;
+                                                                          src = RMr(rs, w); dst = Rr(rd, w);
+                                                                          res = (int64_t)(int32_t)dst * (int64_t)(int32_t)src;
+                                                                          Rw(rd, w, (uint32_t)(res & ((w == 2) ? 0xffff : 0xffffffff)));
+                                                                          uint64_t sign_mask = ((w == 2) ? 0x8000 : 0x80000000);
+                                                                          uint64_t high_mask = ((w == 2) ? 0xffff0000ULL : 0xffffffff00000000ULL);
+                                                                          uint64_t high_bits = res & high_mask;
+                                                                          uint64_t sign_ext = ((res & sign_mask) ? high_mask : 0ULL);
+                                                                          cpu.eflags.CF = cpu.eflags.OF = (high_bits != sign_ext););
   INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
   INSTPAT_END();
 }
@@ -626,6 +750,9 @@ again:
   // 33  /r      XOR r32,r/m32    2/7      Exclusive-OR r/m dword to dword register
   INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4););
 
+  // 39  /r          CMP r/m32,r32      2/5      Compare dword register to r/m dword
+  INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(rs, w), RMr(rd, w), w););
+
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
 
@@ -666,6 +793,11 @@ again:
   // 8D  /r  LEA r32,m    2       Store effective address for m in register r32
   INSTPAT("1000 1101", lea,       E2G,  4, Rw(rd, 4, addr));
 
+  INSTPAT("1001 0000", nop,       N,    0, nop());
+  // 99        CWD                2        DX:AX := sign-extend of AX
+  // 99        CDQ                2        EDX:EAX := sign-extend of EAX
+  INSTPAT("1001 1001", CWD,       N,    is_operand_size_16==true ? 2 : 4, (w == 2 ? (int16_t)Rr(R_AX, w) : (int32_t)Rr(R_EAX, w)) < 0 ? Rw(R_DX, w, w == 2 ? 0xFFFF : 0xFFFFFFFF) : Rw(R_DX, w, 0););
+
   INSTPAT("1010 0000", mov,       O2a,  1, Rw(R_EAX, 1, Mr(addr, 1)));
   INSTPAT("1010 0001", mov,       O2a,  4, Rw(R_EAX, w, Mr(addr, w)));
   INSTPAT("1010 0010", mov,       a2O,  1, Mw(addr, 1, Rr(R_EAX, 1)));
@@ -686,13 +818,13 @@ again:
 
   INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
 
-  // F6   /2   NOT r/m8       2/6      Reverse each bit of r/m byte
-  INSTPAT("1111 0110", not8,      E2G,  1, uint8_t rm_val; rm_val = RMr(rs, w); rm_val = ~rm_val; if(rs != -1) Rw(rs, w, rm_val); else Mw(addr, w, rm_val););
+  // F6
+  INSTPAT("1111 0110", not8,      X2E,  1, gp6());
 
-  // F7   /2   NOT r/m32      2/6      Reverse each bit of r/m dword
-  INSTPAT("1111 0111", not,       E2G,  4, uint32_t rm_val; rm_val = RMr(rs, w); rm_val = ~rm_val; if(rs != -1) Rw(rs, w, rm_val); else Mw(addr, w, rm_val););
+  // F7
+  INSTPAT("1111 0111", not,       X2E,  1, gp7());
 
-  INSTPAT("1111 1111", gp2,       E2G,  1, gp2());
+  INSTPAT("1111 1111", gp2,       X2E,  1, gp2());
 
   INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
   INSTPAT_END();
