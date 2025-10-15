@@ -687,17 +687,21 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
-
-
-// 0F  94   SETE r/m8    4/5     Set byte if equal (ZF=1)
-// 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
-// 0F  AF /r   IMUL r32,r/m32         9-38/12-41  dword register := dword register * r/m dword
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
+  // 0F  94   SETE r/m8    4/5     Set byte if equal (ZF=1)
   INSTPAT("1001 0100", sete,    E2G,    1, if (rs != -1) Rw(rs, w, (1 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
+  // 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
   INSTPAT("1001 0101", setne,   E2G,    1, if (rs != -1) Rw(rs, w, (0 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
+  // 0F  B6 /r   MOVZX r32,r/m8     3/6      Move byte to dword, zero-extend
   INSTPAT("1011 0110", movzx,   E2G,    4, if (rs != -1) Rw(rd, 4, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, 4, (uint32_t)(uint8_t)Mr(addr, 1)););
+  // 0F  BE /r  MOVSX r16,r/m8     3/6      Move byte to word with sign-extend
+  // 0F  BE /r  MOVSX r32,r/m8     3/6      Move byte to dword, sign-extend
+  INSTPAT("1011 1110", movsx,   E2G,    is_operand_size_16==true ? 2 : 4, Rw(rd, w, (int32_t)(int8_t)RMr(rs, 1)););
+  // 0F  BF /r  MOVSX r32,r/m16    3/6      Move word to dword, sign-extend
+  INSTPAT("1011 1111", movsx,   E2G,    4, Rw(rd, 4, (int32_t)(int16_t)RMr(rs, 2)););
+  // 0F  AF /r   IMUL r32,r/m32         9-38/12-41  dword register := dword register * r/m dword
   INSTPAT("1010 1111", imul,    E2G,    is_operand_size_16==true ? 2 : 4, uint32_t src, dst; int64_t res;
                                                                           src = RMr(rs, w); dst = Rr(rd, w);
                                                                           res = (int64_t)(int32_t)dst * (int64_t)(int32_t)src;
@@ -766,6 +770,13 @@ again:
 
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
+
+  // 3C  ib          CMP AL,imm8        2        Compare immediate byte to AL
+  INSTPAT("0011 1100", cmp,       Imm8,  1, cmp_eflags_signextend_width(Rr(R_AL, w), imm, w););
+
+  // 3D  iw          CMP AX,imm16       2        Compare immediate word to AX
+  // 3D  id          CMP EAX,imm32      2        Compare immediate dword to EAX
+  INSTPAT("0011 1101", cmp,       Imm,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(R_EAX, w), imm, w););
 
   // 40 + rd     INC r32                        Increment dword register by 1
   INSTPAT("0100 0???", inc,       N,    0, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, 4), (int32_t)(int8_t)1, 4); cpu.eflags.CF = ef_cf;; Rw(opcode & 0x0f, 4, Rr(opcode & 0x0f, 4) + 1); } );
