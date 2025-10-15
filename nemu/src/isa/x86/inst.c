@@ -831,6 +831,23 @@ again:
   INSTPAT("0111 0110", jbe,       Imm8, 0, if (cpu.eflags.CF == 1 || cpu.eflags.ZF == 1) jmp((int8_t)imm););
   // 77  cb         JA rel8           7+m,3    Jump short if above (CF=0 and ZF=0)
   INSTPAT("0111 0111", ja,        Imm8, 0, if (cpu.eflags.CF == 0 && cpu.eflags.ZF == 0) jmp((int8_t)imm););
+  // 78  cb         JS rel8           7+m,3    Jump short if sign (SF=1)
+  INSTPAT("0111 1000", js,        Imm8, 0, if (cpu.eflags.SF == 1) jmp((int8_t)imm););
+  // 79  cb         JNS rel8          7+m,3    Jump short if not sign (SF=0)
+  INSTPAT("0111 1001", jns,       Imm8, 0, if (cpu.eflags.SF == 0) jmp((int8_t)imm););
+  // 7A  cb         JPE rel8          7+m,3    Jump short if parity even (PF=1)
+  INSTPAT("0111 1010", jpe,       Imm8, 0, if (cpu.eflags.PF == 1) jmp((int8_t)imm););
+  // 7B  cb         JPO rel8          7+m,3    Jump short if parity odd (PF=0)
+  INSTPAT("0111 1011", jpo,       Imm8, 0, if (cpu.eflags.PF == 0) jmp((int8_t)imm););
+  // 7C  cb         JL rel8           7+m,3    Jump short if less (SF<>OF)
+  INSTPAT("0111 1100", jl,        Imm8, 0, if (cpu.eflags.SF != cpu.eflags.OF) jmp((int8_t)imm););
+  // 7D  cb         JGE rel8          7+m,3    Jump short if greater or equal (SF=OF)
+  INSTPAT("0111 1101", jge,       Imm8, 0, if (cpu.eflags.SF == cpu.eflags.OF) jmp((int8_t)imm););
+  // 7E  cb         JLE rel8          7+m,3    Jump short if less or equal (ZF=1 or SF<>OF)
+  INSTPAT("0111 1110", jle,       Imm8, 0, if (cpu.eflags.ZF == 1 || cpu.eflags.SF != cpu.eflags.OF) jmp((int8_t)imm););
+  // 7F  cb         JG rel8           7+m,3    Jump short if greater (ZF=0 and SF=OF)
+  INSTPAT("0111 1111", jg,        Imm8, 0, if (cpu.eflags.ZF == 0 && cpu.eflags.SF == cpu.eflags.OF) jmp((int8_t)imm););
+
 
   INSTPAT("1000 0000", gp1,       I2E,  1, gp1());
   INSTPAT("1000 0001", gp8,       I2E,  is_operand_size_16==true ? 2 : 4, gp8());
