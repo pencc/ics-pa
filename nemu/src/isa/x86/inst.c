@@ -397,8 +397,10 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 // 83 /4 ib AND r/m32,imm8 2/7 AND sign-extended immediate byte with r/m dword
 // 83 /5 ib SUB r/m32,imm8 2/7 Subtract sign-extended immediate byte from r/m dword
 // 83  /6 ib   XOR r/m32,imm8   2/7      XOR sign-extended immediate bytewith r/m dword
-// 83 /7 ib CMP r/m32,imm8 2/5 Compare sign extended immediate byte to r/m dword
+// 83  /7 ib       CMP r/m16,imm8     2/5      Compare sign extended immediate byte to r/m word
+// 83  /7 ib       CMP r/m32,imm8     2/5      Compare sign extended immediate byte to r/m dword
 #define gp3() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
     case 0:  \
       if (rd != -1) { \
@@ -443,9 +445,9 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       break; \
     } \
     case 7:  \
-      int32_t lhs = (rd!=-1 ? Rr(rd, 4) : Mr(addr, 4)); \
+      int32_t lhs = (rd!=-1 ? Rr(rd, w) : Mr(addr, w)); \
       int8_t rhs = imm; \
-      cmp_eflags_signextend_width(lhs, rhs, 4); \
+      cmp_eflags_signextend_width(lhs, rhs, w); \
       break;  \
     default: INV(s->pc); \
   }; \
@@ -687,6 +689,19 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// 81  /7 iw       CMP r/m16,imm16    2/5      Compare immediate word to r/m word
+// 81  /7 id       CMP r/m32,imm32    2/5      Compare immediate dword to r/m dword
+#define gp8() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
+  switch (gp_idx) { \
+    case 7: { \
+      cmp_eflags_signextend_width(RMr(rd, w), imm, w); \
+      break; \
+    } \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
@@ -765,11 +780,15 @@ again:
   // 33  /r      XOR r32,r/m32    2/7      Exclusive-OR r/m dword to dword register
   INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4););
 
+  // 38  /r          CMP r/m8,r8        2/5      Compare byte register to r/mbyte
+  INSTPAT("0011 1000", cmp,       G2E,  1, cmp_eflags_signextend_width(Rr(rs, w), RMr(rd, w), w););
   // 39  /r          CMP r/m32,r32      2/5      Compare dword register to r/m dword
   INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(rs, w), RMr(rd, w), w););
 
+  // 3A  /r          CMP r8,r/m8        2/6      Compare r/m byte to byte register
+  INSTPAT("0011 1011", cmp,       G2E,  1, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, w), w); } else { cmp_eflags_signextend_width(src1, Mr(addr, w), w); } );
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
-  INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
+  INSTPAT("0011 1011", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, w), w); } else { cmp_eflags_signextend_width(src1, Mr(addr, w), w); } );
 
   // 3C  ib          CMP AL,imm8        2        Compare immediate byte to AL
   INSTPAT("0011 1100", cmp,       Imm8,  1, cmp_eflags_signextend_width(Rr(R_AL, w), imm, w););
@@ -797,12 +816,21 @@ again:
   // 6A PUSH imm8 2 Push immediate byte, with sign-extended.
   INSTPAT("0110 1010", push8,     Imm8, 0, Push((int32_t)(int8_t)imm, 4));
 
+  // 72  cb         JB rel8           7+m,3    Jump short if below (CF=1)
+  INSTPAT("0111 0010", jb,        Imm8, 0, if (cpu.eflags.CF == 1) jmp((int8_t)imm););
+  // 73  cb         JAE rel8          7+m,3    Jump short if above or equal(CF=0)
+  INSTPAT("0111 0011", jae,       Imm8, 0, if (cpu.eflags.CF == 0) jmp((int8_t)imm););
+  // 74  cb         JE rel8           7+m,3    Jump short if equal (ZF=1)
   INSTPAT("0111 0100", je,        Imm8, 0, if(1 == cpu.eflags.ZF) jmp((int8_t)imm););
-
   // 75 cb JNE rel8 7+m,3 Jump short if not equal (ZF=0)
   INSTPAT("0111 0101", jne,       Imm8, 0, if(0 == cpu.eflags.ZF) jmp((int8_t)imm););
+  // 76  cb         JBE rel8          7+m,3    Jump short if below or equal(CF=1 or ZF=1)
+  INSTPAT("0111 0110", jbe,       Imm8, 0, if (cpu.eflags.CF == 1 || cpu.eflags.ZF == 1) jmp((int8_t)imm););
+  // 77  cb         JA rel8           7+m,3    Jump short if above (CF=0 and ZF=0)
+  INSTPAT("0111 0111", ja,        Imm8, 0, if (cpu.eflags.CF == 0 && cpu.eflags.ZF == 0) jmp((int8_t)imm););
 
   INSTPAT("1000 0000", gp1,       I2E,  1, gp1());
+  INSTPAT("1000 0001", gp8,       I2E,  is_operand_size_16==true ? 2 : 4, gp8());
   INSTPAT("1000 0011", gp3,       I2E,  1, gp3());
 
   // 84   /r      TEST r/m8,r8      2/5      AND byte register with r/m byte
