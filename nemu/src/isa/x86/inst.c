@@ -767,7 +767,12 @@ again:
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
   INSTPAT("0011 1011", cmp,       G2E,  4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, 4), 4); } else { cmp_eflags_signextend_width(src1, Mr(addr, 4), 4); } );
 
+  // 40 + rd     INC r32                        Increment dword register by 1
   INSTPAT("0100 0???", inc,       N,    0, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, 4), (int32_t)(int8_t)1, 4); cpu.eflags.CF = ef_cf;; Rw(opcode & 0x0f, 4, Rr(opcode & 0x0f, 4) + 1); } );
+
+  // 48+rw     DEC r32            2        Decrement dword register by 1
+  INSTPAT("0100 1???", dec,       N,    is_operand_size_16==true ? 2 : 4, { int ef_cf; ef_cf = cpu.eflags.CF; sub_eflags_width(Rr(opcode & 0x07, w), 1, w); cpu.eflags.CF = ef_cf; Rw(opcode & 0x07, w, Rr(opcode & 0x07, w) - 1); } );
+
   // 50 + rd    PUSH r32      2        Push register dword
   INSTPAT("0101 0???", push_r32,  rA,   0, Push(imm, 4));
 
