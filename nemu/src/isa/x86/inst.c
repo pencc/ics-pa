@@ -709,8 +709,11 @@ void _2byte_esc(Decode *s, bool is_operand_size_16) {
   INSTPAT("1001 0100", sete,    E2G,    1, if (rs != -1) Rw(rs, w, (1 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
   // 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
   INSTPAT("1001 0101", setne,   E2G,    1, if (rs != -1) Rw(rs, w, (0 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
+  // 0F  B6 /r   MOVZX r16,r/m8     3/6      Move byte to word with zero-extend
   // 0F  B6 /r   MOVZX r32,r/m8     3/6      Move byte to dword, zero-extend
-  INSTPAT("1011 0110", movzx,   E2G,    4, if (rs != -1) Rw(rd, 4, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, 4, (uint32_t)(uint8_t)Mr(addr, 1)););
+  INSTPAT("1011 0110", movzx,   E2G,    is_operand_size_16==true ? 2 : 4, if (rs != -1) Rw(rd, w, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, w, (uint32_t)(uint8_t)Mr(addr, 1)););
+  // 0F  B7 /r   MOVZX r32,r/m16    3/6      Move word to dword, zero-extend
+  INSTPAT("1011 0111", movzx,   E2G,    4, if (rs != -1) Rw(rd, w, (uint32_t)(uint16_t)Rr(rs, 2)); else Rw(rd, w, (uint32_t)(uint16_t)Mr(addr, 2)););
   // 0F  BE /r  MOVSX r16,r/m8     3/6      Move byte to word with sign-extend
   // 0F  BE /r  MOVSX r32,r/m8     3/6      Move byte to dword, sign-extend
   INSTPAT("1011 1110", movsx,   E2G,    is_operand_size_16==true ? 2 : 4, Rw(rd, w, (int32_t)(int8_t)RMr(rs, 1)););
