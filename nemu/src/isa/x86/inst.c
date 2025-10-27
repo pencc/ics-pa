@@ -128,12 +128,14 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define Pop(data, w) do { data = Mr(Rr(R_ESP, w), w); Rw(R_ESP, 4, Rr(R_ESP, 4) + 4); } while(0)
 
 #define Call(data, w) do { Push(s->dnpc, w); s->dnpc += data; } while(0)
+#define ICall(data, w) do { Push(s->dnpc, w); s->dnpc = data; } while(0)
 #define LEAVE()  int32_t ebp_tmp; do { Rw(R_ESP, 4, Rr(R_EBP, 4)); Pop(ebp_tmp, 4); Rw(R_EBP, 4, ebp_tmp); } while(0)
 #define Ret() do { Pop(s->dnpc, 4); } while(0)
 
 #define nop() do {  } while(0)
 
 #define jmp(target) do { s->dnpc += target; } while(0)
+#define Ijmp(target) do { s->dnpc = target; } while(0)
 
 #define destr(r)  do { *rd_ = (r); } while (0)
 #define src1r(r)  do { *src1 = Rr(r, w); } while (0)
@@ -373,9 +375,14 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
-// FF   /6    PUSH r/m32      5        Push memory dword
-// FF  /0      INC r/m32                      Increment r/m dword by 1
+// FF  /0     INC r/m32                       Increment r/m dword by 1
+// FF  /2     CALL r/m16       7+m/10+m       Call near, register
+// FF  /2     CALL r/m32       7+m/10+m       Call near, indirect
+// FF  /4     JMP r/m16       7+m/10+m        Jump near indirect
+// FF  /4     JMP r/m32       7+m,10+m        Jump near, indirect
+// FF  /6     PUSH r/m32       5              Push memory dword
 #define gp2() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
     case 0:  \
       int32_t rm32; \
@@ -385,6 +392,12 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       add_eflags_width(rm32, (int32_t)(int8_t)1, 4); \
       cpu.eflags.CF = ef_cf; \
       if (rd != -1) Rw(rd, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
+      break; \
+    case 2:  \
+      ICall(RMr(rd, w), w); \
+      break; \
+    case 4:  \
+      Ijmp(RMr(rd, w)); \
       break; \
     case 6:  \
       Push(RMr(rd, 4), 4); \
@@ -702,6 +715,63 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// D1   /4         SAL r/m16,1       3/7     Multiply r/m word by 2, once
+// D1   /4         SAL r/m32,1       3/7     Multiply r/m dword by 2, once
+// D1   /5         SHR r/m16,1       3/7     Unsigned divide r/m word by 2, once
+// D1   /5         SHR r/m32,1       3/7     Unsigned divide r/m dword by 2, once
+// D1   /7         SAR r/m16,1       3/7     Signed divide^(1) r/m word by 2, once
+// D1   /7         SAR r/m32,1       3/7     Signed divide^(1) r/m dword by 2, once
+#define gp9() do { \
+  w = is_operand_size_16 == true ? 2 : 4; \
+  switch (gp_idx) { \
+    /* D1 /4  SAL/SHL r/m16,1 or r/m32,1 */ \
+    case 4: { \
+      uint32_t rd_val, rd_val_shift; \
+      uint32_t imm = 1; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      rd_val = RMr(rd, w); \
+      rd_val_shift = (rd_val << imm) & mask; \
+      cpu.eflags.CF = (rd_val >> (8 * w - imm)) & 1; \
+      cpu.eflags.OF = ((rd_val >> (8 * w - 1)) & 1) ^ cpu.eflags.CF; \
+      EFLAGS_UPDATE_BY_RESULT(rd_val_shift, w); \
+      RMw(rd_val_shift); \
+      break; \
+    } \
+    \
+    /* D1 /5  SHR r/m16,1 or r/m32,1 */ \
+    case 5: { \
+      uint32_t rd_val, rd_val_shift; \
+      uint32_t imm = 1; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      rd_val = RMr(rd, w); \
+      rd_val_shift = (rd_val >> imm) & mask; \
+      cpu.eflags.CF = (rd_val >> (imm - 1)) & 1; \
+      cpu.eflags.OF = (rd_val >> (8 * w - 1)) & 1; \
+      EFLAGS_UPDATE_BY_RESULT(rd_val_shift, w); \
+      RMw(rd_val_shift); \
+      break; \
+    } \
+    \
+    /* D1 /7  SAR r/m16,1 or r/m32,1 */ \
+    case 7: { \
+      int32_t rd_val, rd_val_shift; \
+      uint32_t imm = 1; \
+      rd_val = RMr(rd, w); \
+      if (w == 2) \
+        rd_val_shift = ((int16_t)rd_val) >> imm; \
+      else \
+        rd_val_shift = rd_val >> imm; \
+      cpu.eflags.CF = (rd_val >> (imm - 1)) & 1; \
+      cpu.eflags.OF = 0; \
+      EFLAGS_UPDATE_BY_RESULT(rd_val_shift, w); \
+      RMw(rd_val_shift); \
+      break; \
+    } \
+    \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
@@ -784,14 +854,14 @@ again:
   INSTPAT("0011 0011", xor,       E2G,  4, uint32_t rm_val, r_val; rm_val = RMr(rs, 4); r_val = Rr(rd, 4); Rw(rd, 4, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, 4););
 
   // 38  /r          CMP r/m8,r8        2/5      Compare byte register to r/mbyte
-  INSTPAT("0011 1000", cmp,       G2E,  1, cmp_eflags_signextend_width(Rr(rs, w), RMr(rd, w), w););
+  INSTPAT("0011 1000", cmp,       G2E,  1, cmp_eflags_signextend_width(RMr(rd, w), Rr(rs, w), w););
   // 39  /r          CMP r/m32,r32      2/5      Compare dword register to r/m dword
-  INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(rs, w), RMr(rd, w), w););
+  INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(RMr(rd, w), Rr(rs, w), w););
 
   // 3A  /r          CMP r8,r/m8        2/6      Compare r/m byte to byte register
-  INSTPAT("0011 1011", cmp,       G2E,  1, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, w), w); } else { cmp_eflags_signextend_width(src1, Mr(addr, w), w); } );
+  INSTPAT("0011 1011", cmp,       G2E,  1, if (rd != -1) { cmp_eflags_signextend_width(Rr(rd, w), src1, w); } else { cmp_eflags_signextend_width(Mr(addr, w), src1, w); } );
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
-  INSTPAT("0011 1011", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, if (rd != -1) { cmp_eflags_signextend_width(src1, Rr(rd, w), w); } else { cmp_eflags_signextend_width(src1, Mr(addr, w), w); } );
+  INSTPAT("0011 1011", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, if (rd != -1) { cmp_eflags_signextend_width(Rr(rd, w), src1, w); } else { cmp_eflags_signextend_width(Mr(addr, w), src1, w); } );
 
   // 3C  ib          CMP AL,imm8        2        Compare immediate byte to AL
   INSTPAT("0011 1100", cmp,       Imm8,  1, cmp_eflags_signextend_width(Rr(R_AL, w), imm, w););
@@ -888,6 +958,8 @@ again:
   INSTPAT("1100 0111", mov,       I2E,  is_operand_size_16==true ? 2 : 4, RMw(imm));
   INSTPAT("1100 1001", leave,     N,    0, LEAVE());
   INSTPAT("1100 1100", nemu_trap, N,    0, NEMUTRAP(s->pc, cpu.eax));
+
+  INSTPAT("1101 0001", gp9,       X2E,  1, gp9());
 
   INSTPAT("1101 0011", gp5,       X2E,  1, gp5());
 
