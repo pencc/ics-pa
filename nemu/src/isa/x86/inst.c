@@ -262,6 +262,7 @@ enum {
   TYPE_E2G,  // Gb <- Eb / Gv <- Ev
   TYPE_I2E,  // Eb <- Ib / Ev <- Iv
   TYPE_X2E,
+  TYPE_GP67,
   TYPE_I82E,
   TYPE_Ib2E, TYPE_cl2E, TYPE_1_E, TYPE_SI2E,
   TYPE_Eb2G, TYPE_Ew2G,
@@ -321,6 +322,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_E2G:  decode_rm(s, rs, addr, rd_, w); break;
     case TYPE_I2E:  decode_rm(s, rd_, addr, gp_idx, w); imm(); break;
     case TYPE_X2E:  decode_rm(s, rd_, addr, gp_idx, w); break;
+    case TYPE_GP67: decode_rm(s, rd_, addr, gp_idx, w); if(0 == *gp_idx) *imm = x86_inst_fetch(s, w); break;
     case TYPE_I82E: decode_rm(s, rd_, addr, gp_idx, w);  *imm = x86_inst_fetch(s, 1); break;
     case TYPE_O2a:  destr(R_EAX); *addr = x86_inst_fetch(s, 4); break;
     case TYPE_a2O:  *rs = R_EAX;  *addr = x86_inst_fetch(s, 4); break;
@@ -592,6 +594,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// F6   /0 ib   TEST r/m8,imm8    2/5      AND immediate byte with r/m byte
 // F6  /2      NOT r/m8        2/6          Reverse each bit of r/m byte
 // F6  /4      MUL AL,r/m8     9-14/12-17   Unsigned multiply (AX := AL * r/m byte)
 // F6  /5      IMUL r/m8       9-14/12-17   AX= AL * r/m byte
@@ -600,6 +603,12 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 #define gp6() do { \
   uint8_t rm8 = (rd != -1 ? Rr(rd, 1) : Mr(addr, 1)); \
   switch (gp_idx) { \
+    case 0: { \
+      cpu.eflags.CF = 0; \
+      cpu.eflags.OF = 0; \
+      EFLAGS_UPDATE_BY_RESULT((uint8_t)rm8 & (uint8_t)imm, 1); \
+      break; \
+    } \
     case 2: { \
       rm8 = ~rm8; \
       if(rd != -1) \
@@ -645,14 +654,22 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// F7   /0 iw   TEST r/m16,imm16  2/5      AND immediate word with r/m word
+// F7   /0 id   TEST r/m32,imm32  2/5      AND immediate dword with r/m dword
 // F7  /2      NOT r/m32        2/6         Reverse each bit of r/m dword
 // F7  /4      MUL EAX,r/m32    9-38/12-41  Unsigned multiply (EDX:EAX := EAX * r/m dword)
 // F7  /5      IMUL r/m32       9-38/12-41  EDX:EAX := EAX * r/m dword
 // F7  /6      DIV EAX,r/m32    38/41       Unsigned divide EDX:EAX by r/m dword (EAX=Quo, EDX=Rem)
 // F7  /7      IDIV EAX,r/m32   43          Signed divide EDX:EAX by DWORD byte (EAX=Quo, EDX=Rem)
 #define gp7() do { \
-  uint32_t rm32 = (rd != -1 ? Rr(rd, 4) : Mr(addr, 4)); \
+  uint32_t rm32 = (rd != -1 ? Rr(rd, w) : Mr(addr, w)); \
   switch (gp_idx) { \
+    case 0: { \
+      cpu.eflags.CF = 0; \
+      cpu.eflags.OF = 0; \
+      EFLAGS_UPDATE_BY_RESULT((uint32_t)rm32 & (uint32_t)imm, w); \
+      break; \
+    } \
     case 2: { \
       rm32 = ~rm32; \
       if(rd != -1) \
@@ -971,10 +988,10 @@ again:
   INSTPAT("1110 1011", jmp8,      Imm8, 0, jmp((int8_t)imm));
 
   // F6
-  INSTPAT("1111 0110", not8,      X2E,  1, gp6());
+  INSTPAT("1111 0110", gp6,       GP67,  1, gp6());
 
   // F7
-  INSTPAT("1111 0111", not,       X2E,  1, gp7());
+  INSTPAT("1111 0111", gp7,       GP67,  is_operand_size_16==true ? 2 : 4, gp7());
 
   INSTPAT("1111 1111", gp2,       X2E,  1, gp2());
 
