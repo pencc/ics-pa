@@ -326,7 +326,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_I82E: decode_rm(s, rd_, addr, gp_idx, w);  *imm = x86_inst_fetch(s, 1); break;
     case TYPE_O2a:  destr(R_EAX); *addr = x86_inst_fetch(s, 4); break;
     case TYPE_a2O:  *rs = R_EAX;  *addr = x86_inst_fetch(s, 4); break;
-    case TYPE_Imm:  *imm = x86_inst_fetch(s, 4); break;
+    case TYPE_Imm:  *imm = x86_inst_fetch(s, w); break;
     case TYPE_Imm8: *imm = x86_inst_fetch(s, 1); break;
     case TYPE_rA:   *imm = Rr(R_EAX + (opcode & 0x7), 4); break;
     case TYPE_N:    break;
@@ -792,6 +792,38 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
+  // 0F 80  JO rel16/32       Jump near if overflow (OF=1)
+  INSTPAT("1000 0000", jo,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.OF == 1) jmp(imm););
+  // 0F 81  JNO rel16/32      Jump near if not overflow (OF=0)
+  INSTPAT("1000 0001", jno, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.OF == 0) jmp(imm););
+  // 0F 82  JC rel16/32       Jump near if carry (CF=1)
+  INSTPAT("1000 0010", jc,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.CF == 1) jmp(imm););
+  // 0F 83  JAE rel16/32      Jump near if above or equal (CF=0)
+  INSTPAT("1000 0011", jae, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.CF == 0) jmp(imm););
+  // 0F 84  JE rel16/32       Jump near if equal (ZF=1)
+  INSTPAT("1000 0100", je,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 1) jmp(imm););
+  // 0F 85  JNE rel16/32      Jump near if not equal (ZF=0)
+  INSTPAT("1000 0101", jne, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 0) jmp(imm););
+  // 0F 86  JBE rel16/32      Jump near if below or equal (CF=1 or ZF=1)
+  INSTPAT("1000 0110", jbe, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.CF == 1 || cpu.eflags.ZF == 1) jmp(imm););
+  // 0F 87  JA rel16/32       Jump near if above (CF=0 and ZF=0)
+  INSTPAT("1000 0111", ja,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.CF == 0 && cpu.eflags.ZF == 0) jmp(imm););
+  // 0F 88  JS rel16/32       Jump near if sign (SF=1)
+  INSTPAT("1000 1000", js,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.SF == 1) jmp(imm););
+  // 0F 89  JNS rel16/32      Jump near if not sign (SF=0)
+  INSTPAT("1000 1001", jns, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.SF == 0) jmp(imm););
+  // 0F 8A  JP rel16/32       Jump near if parity (PF=1)
+  INSTPAT("1000 1010", jp,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.PF == 1) jmp(imm););
+  // 0F 8B  JNP rel16/32      Jump near if not parity (PF=0)
+  INSTPAT("1000 1011", jnp, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.PF == 0) jmp(imm););
+  // 0F 8C  JNGE rel16/32     Jump near if not greater or equal (SF != OF)
+  INSTPAT("1000 1100", jnge, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.SF != cpu.eflags.OF) jmp(imm););
+  // 0F 8D  JNL rel16/32      Jump near if not less (SF == OF)
+  INSTPAT("1000 1101", jnl,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.SF == cpu.eflags.OF) jmp(imm););
+  // 0F 8E  JLE rel16/32      Jump near if less or equal (ZF=1 or SF!=OF)
+  INSTPAT("1000 1110", jle,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 1 || cpu.eflags.SF != cpu.eflags.OF) jmp(imm););
+  // 0F 8F  JNLE rel16/32     Jump near if not less or equal (ZF=0 and SF==OF)
+  INSTPAT("1000 1111", jnle, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 0 && cpu.eflags.SF == cpu.eflags.OF) jmp(imm););
   // 0F  94   SETE r/m8    4/5     Set byte if equal (ZF=1)
   INSTPAT("1001 0100", sete,    E2G,    1, if (rs != -1) Rw(rs, w, (1 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
   // 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
@@ -902,7 +934,7 @@ again:
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
 
   // 68 PUSH imm32 2 Push immediate dword
-  INSTPAT("0110 1000", push32,    Imm,  0, Push(imm, 4));
+  INSTPAT("0110 1000", push32,    Imm,  is_operand_size_16==true ? 2 : 4, Push(imm, w));
   // 6A PUSH imm8 2 Push immediate byte, with sign-extended.
   INSTPAT("0110 1010", push8,     Imm8, 0, Push((int32_t)(int8_t)imm, 4));
 
@@ -980,7 +1012,7 @@ again:
 
   INSTPAT("1101 0011", gp5,       X2E,  1, gp5());
 
-  INSTPAT("1110 1000", call,      Imm,  0, Call(imm, 4));
+  INSTPAT("1110 1000", call,      Imm,  is_operand_size_16==true ? 2 : 4, Call(imm, w));
 
   // E9  cd    JMP rel32       7+m             Jump near, displacement relative to next instruction
   INSTPAT("1110 1001", jmp32,     Imm,  is_operand_size_16==true ? 2 : 4, if(w == 2) jmp((int16_t)imm); else jmp((int32_t)imm););
