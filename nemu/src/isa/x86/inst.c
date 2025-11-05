@@ -436,20 +436,15 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       cpu.eflags.OF = 0; \
       break; \
     case 5:  \
-      int32_t dst = (rd!=-1 ? Rr(rd, 4) : Mr(addr, 4)); \
+      int32_t dst = (rd!=-1 ? Rr(rd, w) : Mr(addr, w)); \
       int32_t src = (int32_t)(int8_t)imm; \
       int32_t calc_ret = dst - src; \
       if (rd != -1) { \
-        Rw(rd, 4, calc_ret); \
+        Rw(rd, w, calc_ret); \
       } else { \
-        Mw(addr, 4, calc_ret); \
+        Mw(addr, w, calc_ret); \
       } \
-      cpu.eflags.ZF = (calc_ret == 0); \
-      cpu.eflags.SF = (calc_ret < 0); \
-      cpu.eflags.PF = (__builtin_parity(calc_ret & 0xff) == 0); \
-      cpu.eflags.CF = ((uint32_t)src > (uint32_t)dst); \
-      cpu.eflags.OF = (((dst ^ src) & (dst ^ calc_ret)) >> 31) & 1; \
-      cpu.eflags.AF = (((dst ^ src ^ calc_ret) & 0x10) != 0); \
+      sub_eflags_width(dst, src, w); \
       break;  \
     case 6:  { \
       uint32_t rm_val, r_val; \
@@ -908,9 +903,9 @@ again:
   INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(RMr(rd, w), Rr(rs, w), w););
 
   // 3A  /r          CMP r8,r/m8        2/6      Compare r/m byte to byte register
-  INSTPAT("0011 1011", cmp,       G2E,  1, if (rd != -1) { cmp_eflags_signextend_width(Rr(rd, w), src1, w); } else { cmp_eflags_signextend_width(Mr(addr, w), src1, w); } );
+  INSTPAT("0011 1011", cmp,       E2G,  1, cmp_eflags_signextend_width(Rr(rd, w), RMr(rs, w), w); );
   // 3B /r CMP r32,r/m32 2/6 Compare r/m dword to dword register
-  INSTPAT("0011 1011", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, if (rd != -1) { cmp_eflags_signextend_width(Rr(rd, w), src1, w); } else { cmp_eflags_signextend_width(Mr(addr, w), src1, w); } );
+  INSTPAT("0011 1011", cmp,       E2G,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(rd, w), RMr(rs, w), w););
 
   // 3C  ib          CMP AL,imm8        2        Compare immediate byte to AL
   INSTPAT("0011 1100", cmp,       Imm8,  1, cmp_eflags_signextend_width(Rr(R_AL, w), imm, w););
@@ -920,10 +915,10 @@ again:
   INSTPAT("0011 1101", cmp,       Imm,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(Rr(R_EAX, w), imm, w););
 
   // 40 + rd     INC r32                        Increment dword register by 1
-  INSTPAT("0100 0???", inc,       N,    0, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, 4), (int32_t)(int8_t)1, 4); cpu.eflags.CF = ef_cf;; Rw(opcode & 0x0f, 4, Rr(opcode & 0x0f, 4) + 1); } );
+  INSTPAT("0100 0???", inc,       N,    is_operand_size_16==true ? 2 : 4, { int ef_cf; ef_cf = cpu.eflags.CF; add_eflags_width(Rr(opcode & 0x0f, w), (int32_t)(int8_t)1, w); cpu.eflags.CF = ef_cf; Rw(opcode & 0x0f, w, Rr(opcode & 0x0f, 4) + 1); } );
 
   // 48+rw     DEC r32            2        Decrement dword register by 1
-  INSTPAT("0100 1???", dec,       N,    is_operand_size_16==true ? 2 : 4, { int ef_cf; ef_cf = cpu.eflags.CF; sub_eflags_width(Rr(opcode & 0x07, w), 1, w); cpu.eflags.CF = ef_cf; Rw(opcode & 0x07, w, Rr(opcode & 0x07, w) - 1); } );
+  INSTPAT("0100 1???", dec,       N,    is_operand_size_16==true ? 2 : 4, { int ef_cf; ef_cf = cpu.eflags.CF; sub_eflags_width(Rr(opcode & 0x07, w), (int32_t)(int8_t)1, w); cpu.eflags.CF = ef_cf; Rw(opcode & 0x07, w, Rr(opcode & 0x07, w) - 1); } );
 
   // 50 + rd    PUSH r32      2        Push register dword
   INSTPAT("0101 0???", push_r32,  rA,   0, Push(imm, 4));
