@@ -345,16 +345,24 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
  */
 // 80 /0 ib ADD r/m8,imm8        2/7      Add immediate byte to r/m byte
 // 80 /4 ib AND r/m8,imm8 2/7 AND immediate byte to r/m byte
+// 80  /3 ib    SBB r/m8,imm8     2/7     Subtract with borrow immediate byte from r/m byte
 // 80 /5 ib SUB r/m8,imm8 2/7 Subtract immediate byte from r/m byte
 // 80 /7 ib CMP r/m8,imm8 2/5 Compare immediate byte to r/m byte
 #define gp1() do { \
   switch (gp_idx) { \
     case 0:  \
-        uint8_t tmp_rs, tmp_rd; \
-        tmp_rs = imm; \
-        tmp_rd = RMr(rd, 1); \
-        add_eflags_width(tmp_rd, tmp_rs, w); \
-        RMw(tmp_rs + tmp_rd); \
+      uint8_t tmp_rs, tmp_rd; \
+      tmp_rs = imm; \
+      tmp_rd = RMr(rd, 1); \
+      add_eflags_width(tmp_rd, tmp_rs, w); \
+      RMw(tmp_rs + tmp_rd); \
+      break; \
+    case 3: \
+      uint8_t tmp_src, tmp_dst; \
+      tmp_dst = RMr(rd, 1); \
+      tmp_src = imm; \
+      RMw(tmp_dst - tmp_src - cpu.eflags.CF); \
+      sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, 1); \
       break; \
     case 4:  \
       if (rd != -1) { \
@@ -418,6 +426,10 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 
 // 83 /0 ib ADD r/m16,imm8       2/7      Add sign-extended immediate byte to r/m word
 // 83 /0 ib ADD r/m32,imm8 2/7 Add sign-extended immediate byte to r/m dword
+// 83 /2 ib  ADC r/m16,imm8   2/7       Add with CF sign-extended immediate byte to r/m word
+// 83 /2 ib  ADC r/m32,imm8   2/7       Add with CF sign-extended immediate byte into r/m dword
+// 83  /3 ib    SBB r/m16,imm8    2/7     Subtract with borrow sign-extended immediate byte from r/m word
+// 83  /3 ib    SBB r/m32,imm8    2/7     Subtract with borrow sign-extended immediate byte from r/m dword
 // 83 /4 ib AND r/m32,imm8 2/7 AND sign-extended immediate byte with r/m dword
 // 83 /5 ib SUB r/m32,imm8 2/7 Subtract sign-extended immediate byte from r/m dword
 // 83  /6 ib   XOR r/m32,imm8   2/7      XOR sign-extended immediate bytewith r/m dword
@@ -434,6 +446,21 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
         add_eflags_width(Mr(addr, w), (int32_t)(int8_t)imm, w); \
         Mw(addr, w, Mr(addr, w) + (int32_t)(int8_t)imm); \
       } \
+      break; \
+    case 2:  \
+      uint32_t tmp_cf, tmp_rs, tmp_rd; \
+      tmp_cf = cpu.eflags.CF; \
+      tmp_rs = (int32_t)(int8_t)imm; \
+      tmp_rd = RMr(rd, w); \
+      add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); \
+      RMw(tmp_rs + tmp_rd + tmp_cf); \
+      break; \
+    case 3: \
+      uint32_t tmp_src, tmp_dst; \
+      tmp_dst = RMr(rd, w); \
+      tmp_src = (int32_t)(int8_t)imm; \
+      RMw(tmp_dst - tmp_src - cpu.eflags.CF); \
+      sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w); \
       break; \
     case 4:  \
       if (rd != -1) { \
@@ -723,20 +750,42 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
-// 81 /0 iw  ADD r/m16,imm16      2/7      Add immediate word to r/m word
-// 81 /0 id  ADD r/m32,imm32      2/7      Add immediate dword to r/m dword
+// 81  /0 iw  ADD r/m16,imm16      2/7      Add immediate word to r/m word
+// 81  /0 id  ADD r/m32,imm32      2/7      Add immediate dword to r/m dword
+// 81 /2 iw  ADC r/m16,imm16  2/7       Add with carry immediate word to r/m word
+// 81 /2 id  ADC r/m32,imm32  2/7       Add with CF immediate dword to r/m dword
+// 81  /3 iw    SBB r/m16,imm16   2/7     Subtract with borrow immediate word from r/m word
+// 81  /3 id    SBB r/m32,imm32   2/7     Subtract with borrow immediate dword from r/m dword
 // 81  /7 iw       CMP r/m16,imm16    2/5      Compare immediate word to r/m word
 // 81  /7 id       CMP r/m32,imm32    2/5      Compare immediate dword to r/m dword
 #define gp8() do { \
   w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
-    case 0:  \
-        uint32_t tmp_rs, tmp_rd; \
-        tmp_rs = imm; \
-        tmp_rd = RMr(rd, w); \
-        add_eflags_width(tmp_rd, tmp_rs, w); \
-        RMw(tmp_rs + tmp_rd); \
+    case 0:  { \
+      uint32_t tmp_rs, tmp_rd; \
+      tmp_rs = imm; \
+      tmp_rd = RMr(rd, w); \
+      add_eflags_width(tmp_rd, tmp_rs, w); \
+      RMw(tmp_rs + tmp_rd); \
       break; \
+    } \
+    case 2:  { \
+      uint32_t tmp_cf, tmp_rs, tmp_rd; \
+      tmp_cf = cpu.eflags.CF; \
+      tmp_rs = imm; \
+      tmp_rd = RMr(rd, w); \
+      add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); \
+      RMw(tmp_rs + tmp_rd + tmp_cf); \
+      break; \
+    } \
+    case 3: { \
+      uint32_t tmp_src, tmp_dst; \
+      tmp_dst = RMr(rd, w); \
+      tmp_src = imm; \
+      RMw(tmp_dst - tmp_src - cpu.eflags.CF); \
+      sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w); \
+      break; \
+    } \
     case 7: { \
       cmp_eflags_signextend_width(RMr(rd, w), imm, w); \
       break; \
@@ -896,10 +945,37 @@ again:
 
   INSTPAT("0000 1111", 2byte_esc, N,    0, _2byte_esc(s, is_operand_size_16));
 
-  INSTPAT("0001 0011", adc,       E2G,  4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, 4); Rw(rd, 4, tmp_rs + tmp_rd + tmp_cf););
+  // 10 /r     ADC r/m8,r8      2/7       Add with carry byte register to r/m byte
+  INSTPAT("0001 0000", adc,       G2E,  1, uint8_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = Rr(rs, w); tmp_rd =  RMr(rd, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); RMw(tmp_rs + tmp_rd + tmp_cf););
+  // 11 /r     ADC r/m16,r16    2/7       Add with carry word register to r/m word
+  // 11 /r     ADC r/m32,r32    2/7       Add with CF dword register to r/m dword
+  INSTPAT("0001 0001", adc,       G2E,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = Rr(rs, w); tmp_rd = RMr(rd, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); RMw(tmp_rs + tmp_rd + tmp_cf););
+  // 12 /r     ADC r8,r/m8      2/6       Add with carry r/m byte to byte register
+  INSTPAT("0001 0010", adc,       E2G,  1, uint8_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, w); tmp_rd = Rr(rd, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); Rw(rd, w, tmp_rs + tmp_rd + tmp_cf););
+  // 13 /r     ADC r16,r/m16    2/6       Add with carry r/m word to word register
+  // 13 /r     ADC r32,r/m32    2/6       Add with CF r/m dword to dword register
+  INSTPAT("0001 0011", adc,       E2G,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = RMr(rs, w); tmp_rd = Rr(rd, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); Rw(rd, w, tmp_rs + tmp_rd + tmp_cf););
+  // 14 ib     ADC AL,imm8      2         Add with carry immediate byte to AL
+  INSTPAT("0001 0100", adc,      Imm8,  1, uint8_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = imm; tmp_rd = Rr(R_AL, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); Rw(R_AL, w, tmp_rs + tmp_rd + tmp_cf););
+  // 15 iw     ADC AX,imm16     2         Add with carry immediate word to AX
+  // 15 id     ADC EAX,imm32    2         Add with carry immediate dword to EAX
+  INSTPAT("0001 0101", adc,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_cf, tmp_rs, tmp_rd; tmp_cf = cpu.eflags.CF; tmp_rs = imm; tmp_rd = Rr(R_EAX, w); add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); Rw(R_EAX, w, tmp_rs + tmp_rd + tmp_cf););
 
+  // 18  /r       SBB r/m8,r8       2/6     Subtract with borrow byte register from r/m byte
+  INSTPAT("0001 1000", sbb,       G2E,  1, uint8_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); RMw(tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
+  // 19  /r       SBB r/m16,r16     2/6     Subtract with borrow word register from r/m word
+  // 19  /r       SBB r/m32,r32     2/6     Subtract with borrow dword register from r/m dword
+  INSTPAT("0001 1001", sbb,       G2E,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); RMw(tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
+  // 1A  /r       SBB r8,r/m8       2/7     Subtract with borrow r/m byte from byte register
+  INSTPAT("0001 1010", sbb,       E2G,  1, uint8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
+  // 1B  /r       SBB r16,r/m16     2/7     Subtract with borrow r/m word from word register
   // 1B  /r       SBB r32,r/m32     2/7     Subtract with borrow r/m dword from dword register
-  INSTPAT("0001 1011", sbb,       E2G,  4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, 4); tmp_src = RMr(rs, 4); Rw(rd, 4, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, 4););
+  INSTPAT("0001 1011", sbb,       E2G,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
+  // 1C  ib       SBB AL,imm8       2       Subtract with borrow immediate byte from AL
+  INSTPAT("0001 1100", sbb,      Imm8,  1, uint8_t tmp_src, tmp_dst; tmp_dst = Rr(R_AL, w); tmp_src = imm; Rw(R_AL, w, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
+  // 1D  iw       SBB AX,imm16      2       Subtract with borrow immediate wordfrom AX
+  // 1D  id       SBB EAX,imm32     2       Subtract with borrow immediate dword from EAX
+  INSTPAT("0001 1101", sbb,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(R_EAX, w); tmp_src = imm; Rw(R_EAX, w, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
 
   // 22 /r     AND r8,r/m8          2/6       AND r/m byte to byte register
   INSTPAT("0010 0010", and8,      E2G,  1, uint8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); Rw(rd, w, tmp_dst & tmp_src));
@@ -988,7 +1064,6 @@ again:
   INSTPAT("0111 1110", jle,       Imm8, 0, if (cpu.eflags.ZF == 1 || cpu.eflags.SF != cpu.eflags.OF) jmp((int8_t)imm););
   // 7F  cb         JG rel8           7+m,3    Jump short if greater (ZF=0 and SF=OF)
   INSTPAT("0111 1111", jg,        Imm8, 0, if (cpu.eflags.ZF == 0 && cpu.eflags.SF == cpu.eflags.OF) jmp((int8_t)imm););
-
 
   INSTPAT("1000 0000", gp1,       I2E,  1, gp1());
   INSTPAT("1000 0001", gp8,       I2E,  is_operand_size_16==true ? 2 : 4, gp8());
