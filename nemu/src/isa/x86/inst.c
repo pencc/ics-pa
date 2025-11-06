@@ -343,11 +343,19 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
  * OF (溢出标志位):如果发生有符号运算的溢出，则OF=1；否则，OF=0。
  * AF ( m ):如果发生低4位到高4位的借位，则AF=1；否则，AF=0。
  */
+// 80 /0 ib ADD r/m8,imm8        2/7      Add immediate byte to r/m byte
 // 80 /4 ib AND r/m8,imm8 2/7 AND immediate byte to r/m byte
 // 80 /5 ib SUB r/m8,imm8 2/7 Subtract immediate byte from r/m byte
 // 80 /7 ib CMP r/m8,imm8 2/5 Compare immediate byte to r/m byte
 #define gp1() do { \
   switch (gp_idx) { \
+    case 0:  \
+        uint8_t tmp_rs, tmp_rd; \
+        tmp_rs = imm; \
+        tmp_rd = RMr(rd, 1); \
+        add_eflags_width(tmp_rd, tmp_rs, w); \
+        RMw(tmp_rs + tmp_rd); \
+      break; \
     case 4:  \
       if (rd != -1) { \
         Rw(rd, 1, Rr(rd, 1) & (int8_t)imm); \
@@ -408,6 +416,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// 83 /0 ib ADD r/m16,imm8       2/7      Add sign-extended immediate byte to r/m word
 // 83 /0 ib ADD r/m32,imm8 2/7 Add sign-extended immediate byte to r/m dword
 // 83 /4 ib AND r/m32,imm8 2/7 AND sign-extended immediate byte with r/m dword
 // 83 /5 ib SUB r/m32,imm8 2/7 Subtract sign-extended immediate byte from r/m dword
@@ -419,11 +428,11 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   switch (gp_idx) { \
     case 0:  \
       if (rd != -1) { \
-        add_eflags_width(Rr(rd, 4), (int32_t)(int8_t)imm, 4); \
-        Rw(rd, 4, Rr(rd, 4) + (int32_t)(int8_t)imm); \
+        add_eflags_width(Rr(rd, w), (int32_t)(int8_t)imm, w); \
+        Rw(rd, w, Rr(rd, w) + (int32_t)(int8_t)imm); \
       } else { \
-        add_eflags_width(Mr(addr, 4), (int32_t)(int8_t)imm, 4); \
-        Mw(addr, 4, Mr(addr, 4) + (int32_t)(int8_t)imm); \
+        add_eflags_width(Mr(addr, w), (int32_t)(int8_t)imm, w); \
+        Mw(addr, w, Mr(addr, w) + (int32_t)(int8_t)imm); \
       } \
       break; \
     case 4:  \
@@ -714,11 +723,20 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// 81 /0 iw  ADD r/m16,imm16      2/7      Add immediate word to r/m word
+// 81 /0 id  ADD r/m32,imm32      2/7      Add immediate dword to r/m dword
 // 81  /7 iw       CMP r/m16,imm16    2/5      Compare immediate word to r/m word
 // 81  /7 id       CMP r/m32,imm32    2/5      Compare immediate dword to r/m dword
 #define gp8() do { \
   w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
+    case 0:  \
+        uint32_t tmp_rs, tmp_rd; \
+        tmp_rs = imm; \
+        tmp_rd = RMr(rd, w); \
+        add_eflags_width(tmp_rd, tmp_rs, w); \
+        RMw(tmp_rs + tmp_rd); \
+      break; \
     case 7: { \
       cmp_eflags_signextend_width(RMr(rd, w), imm, w); \
       break; \
@@ -856,11 +874,20 @@ again:
 
   INSTPAT_START();
 
+  // 00 /r     ADD r/m8,r8          2/7      Add byte register to r/m byte
+  INSTPAT("0000 0000", add,       G2E,  1, uint32_t tmp_rs, tmp_rd; tmp_rs = Rr(rs, w); tmp_rd = RMr(rd, w); add_eflags_width(tmp_rd, tmp_rs, w); RMw(tmp_rs + tmp_rd); );
   // 01 /r ADD r/m32,r32 2/7 Add dword register to r/m dword
-  INSTPAT("0000 0001", add,       G2E,  4, if (rd != -1) { add_eflags_width(Rr(rd, 4), src1, 4); Rw(rd, 4, Rr(rd, 4) + src1); } else { add_eflags_width(Mr(addr, 4), src1, 4); Mw(addr, 4, Mr(addr, 4) + src1); } );
+  INSTPAT("0000 0001", add,       G2E,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_rs, tmp_rd; tmp_rs = Rr(rs, w); tmp_rd = RMr(rd, w); add_eflags_width(tmp_rd, tmp_rs, w); RMw(tmp_rs + tmp_rd); );
+  // 02 /r     ADD r8,r/m8          2/6      Add r/m byte to byte register
+  INSTPAT("0000 0010", add,       E2G,  1, uint32_t tmp_rs, tmp_rd; tmp_rs = RMr(rs, 4); tmp_rd = Rr(rd, 4); add_eflags_width(tmp_rd, tmp_rs, 4); Rw(rd, 4, tmp_rs + tmp_rd););
   // 03 /r     ADD r32,r/m32        2/6      Add r/m dword to dword register
-  INSTPAT("0000 0011", add,       E2G,  4, uint32_t tmp_rs, tmp_rd; tmp_rs = RMr(rs, 4); tmp_rd =  Rr(rd, 4); add_eflags_width(tmp_rs, tmp_rd, 4); Rw(rd, 4, tmp_rs + tmp_rd););
-  
+  INSTPAT("0000 0011", add,       E2G,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_rs, tmp_rd; tmp_rs = RMr(rs, 4); tmp_rd = Rr(rd, 4); add_eflags_width(tmp_rd, tmp_rs, 4); Rw(rd, 4, tmp_rs + tmp_rd););
+  // 04 ib     ADD AL,imm8          2        Add immediate byte to AL
+  INSTPAT("0000 0100", add,      Imm8,  1, uint32_t tmp_rs, tmp_rd; tmp_rs = imm; tmp_rd = Rr(R_AL, w); add_eflags_width(tmp_rd, tmp_rs, w); Rw(R_AL, w, tmp_rs + tmp_rd); );
+  // 05 iw     ADD AX,imm16         2        Add immediate word to AX
+  // 05 id     ADD EAX,imm32        2        Add immediate dword to EAX
+  INSTPAT("0000 0101", add,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_rs, tmp_rd; tmp_rs = imm; tmp_rd = Rr(R_EAX, w); add_eflags_width(tmp_rd, tmp_rs, w); Rw(R_EAX, w, tmp_rs + tmp_rd);  );
+
   // 09  /r       OR r/m32,r32      2/6       OR dword register to r/m dword
   INSTPAT("0000 1001", or,        G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val | src1); or_eflags_width(rm_val, src1, 4););
 
