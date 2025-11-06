@@ -18,7 +18,7 @@
 void sdb_mainloop();
 
 void engine_start() {
-#define CONFIG_TARGET_AM 
+//#define CONFIG_TARGET_AM 
 #ifdef CONFIG_TARGET_AM
   cpu_exec(-1);
 #else
