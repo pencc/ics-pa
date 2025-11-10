@@ -13,4 +13,4 @@
 !/resources/rom/*
 !/resources/books/*
 /fceux-am
-/am-kernels
+#/am-kernels

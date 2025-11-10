@@ -26,11 +26,15 @@ override ARGS += $(ARGS_DIFF)
 # Command to execute NEMU
 IMG ?=
 NEMU_EXEC := $(BINARY) $(ARGS) $(IMG)
+NEMU_EXEC_BATCH := $(BINARY) $(ARGS) -b $(IMG)
 
 run-env: $(BINARY) $(DIFF_REF_SO)
 
 run: run-env
 	$(NEMU_EXEC)
+
+runs: run-env
+	$(NEMU_EXEC_BATCH)
 
 gdb: run-env
 	gdb -s $(BINARY) --args $(NEMU_EXEC)

@@ -29,6 +29,9 @@ image: image-dep
 run: insert-arg
 	$(MAKE) -C $(NEMU_HOME) ISA=$(ISA) run ARGS="$(NEMUFLAGS)" IMG=$(IMAGE).bin
 
+runs: insert-arg
+	$(MAKE) -C $(NEMU_HOME) ISA=$(ISA) runs ARGS="$(NEMUFLAGS)" IMG=$(IMAGE).bin
+
 gdb: insert-arg
 	$(MAKE) -C $(NEMU_HOME) ISA=$(ISA) gdb ARGS="$(NEMUFLAGS)" IMG=$(IMAGE).bin
 
