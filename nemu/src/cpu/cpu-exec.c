@@ -33,9 +33,52 @@ static bool g_print_step = false;
 
 void device_update();
 
+#ifdef CONFIG_ITRACE
+typedef struct IRingBuf {
+  char logbuf[128];
+} IRingBuf;
+
+static word_t iRBHeader;
+static IRingBuf iRingBuf[16];
+
+static void ibuffer_insert(const char* logbuf) {
+  memcpy(iRingBuf[iRBHeader].logbuf, logbuf, strlen(logbuf) + 1);
+  ++iRBHeader;
+  if (iRBHeader == ARRLEN(iRingBuf)) {
+    iRBHeader = 0;
+  }
+}
+
+void ibuffer_print() {
+  for (size_t i = iRBHeader; i < ARRLEN(iRingBuf); i++) {
+    printf("    ");
+    printf("%s\n", iRingBuf[i].logbuf);
+  }
+
+  for (size_t i = 0; i < iRBHeader - 1; i++) {
+    if (i == iRBHeader) {
+      printf("--> ");
+    } else {
+      printf("    ");
+    }
+    printf("%s\n", iRingBuf[i].logbuf);
+  }
+
+  if(0 == iRBHeader)
+    iRBHeader = ARRLEN(iRingBuf) - 1;
+  else
+    iRBHeader -= 1;
+  printf("--> ");
+  printf("%s\n", iRingBuf[iRBHeader].logbuf);
+}
+#endif /* CONFIG_ITRACE */
+
 static void trace_and_difftest(Decode *_this, vaddr_t dnpc) {
 #ifdef CONFIG_ITRACE_COND
   if (ITRACE_COND) { log_write("%s\n", _this->logbuf); }
+#endif
+#ifdef CONFIG_ITRACE
+  ibuffer_insert(_this->logbuf);
 #endif
   if (g_print_step) { IFDEF(CONFIG_ITRACE, puts(_this->logbuf)); }
   IFDEF(CONFIG_DIFFTEST, difftest_step(_this->pc, dnpc));
@@ -101,6 +144,9 @@ static void statistic() {
 void assert_fail_msg() {
   isa_reg_display();
   statistic();
+#ifdef CONFIG_ITRACE
+  ibuffer_print();
+#endif
 }
 
 /* Simulate how the CPU works. */
@@ -129,6 +175,10 @@ void cpu_exec(uint64_t n) {
            (nemu_state.halt_ret == 0 ? ANSI_FMT("HIT GOOD TRAP", ANSI_FG_GREEN) :
             ANSI_FMT("HIT BAD TRAP", ANSI_FG_RED))),
           nemu_state.halt_pc);
+#ifdef CONFIG_ITRACE
+      if(NEMU_ABORT == nemu_state.state)
+        ibuffer_print();
+#endif
       // fall through
     case NEMU_QUIT: statistic();
   }
