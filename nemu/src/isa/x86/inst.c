@@ -18,6 +18,9 @@
 #include <cpu/ifetch.h>
 #include <cpu/decode.h>
 
+uint32_t pio_read(ioaddr_t addr, int len);
+void pio_write(ioaddr_t addr, int len, uint32_t data);
+
 typedef union {
   struct {
     uint8_t R_M		:3;
@@ -1144,15 +1147,27 @@ again:
   // EB  cb    JMP rel8        7+m             Jump short
   INSTPAT("1110 1011", jmp8,      Imm8, 0, jmp((int8_t)imm));
 
+  // EC        IN AL,DX      13,pm=7*/27**     Input byte from port DX into AL
+  INSTPAT("1110 1100", in8,       N,    1, Rw(R_AL, w, (uint8_t)pio_read(Rr(R_DX, 2), w)));
+  // ED        IN AX,DX      13,pm=7*/27**     Input word from port DX into AX
+  // ED        IN EAX,DX     13,pm=7*/27**     Input dword from port DX into EAX
+  INSTPAT("1110 1101", in,        N,    is_operand_size_16==true ? 2 : 4, Rw(R_EAX, w, (uint32_t)pio_read(Rr(R_DX, 2), w)));
+
+  // EE        OUT DX,AL       11,pm=5*/25**   Output byte AL to port number in DX
+  INSTPAT("1110 1110", out8,      N,    1, pio_write(Rr(R_DX, 2), w, Rr(R_AL, w)));
+  // EF        OUT DX,AX       11,pm=5*/25**   Output word AL to port number in DX
+  // EF        OUT DX,EAX      11,pm=5*/25**   Output dword AL to port number in DX
+  INSTPAT("1110 1111", out,       N,    is_operand_size_16==true ? 2 : 4, pio_write(Rr(R_DX, 2), w, Rr(R_EAX, w)));
+
   // F6
   INSTPAT("1111 0110", gp6,       GP67,  1, gp6());
 
   // F7
   INSTPAT("1111 0111", gp7,       GP67,  is_operand_size_16==true ? 2 : 4, gp7());
 
-  INSTPAT("1111 1111", gp2,       X2E,  1, gp2());
+  INSTPAT("1111 1111", gp2,       X2E,   1, gp2());
 
-  INSTPAT("???? ????", inv,       N,    0, INV(s->pc));
+  INSTPAT("???? ????", inv,       N,     0, INV(s->pc));
   INSTPAT_END();
 
   return 0;
