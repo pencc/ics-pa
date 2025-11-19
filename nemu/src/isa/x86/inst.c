@@ -405,7 +405,10 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// FF  /0      INC r/m16                      Increment r/m word by 1
 // FF  /0     INC r/m32                       Increment r/m dword by 1
+// FF /1     DEC r/m16          2/6      Decrement r/m word by 1
+// FF /1     DEC r/m32          2/6      Decrement r/m dword by 1
 // FF  /2     CALL r/m16       7+m/10+m       Call near, register
 // FF  /2     CALL r/m32       7+m/10+m       Call near, indirect
 // FF  /4     JMP r/m16       7+m/10+m        Jump near indirect
@@ -417,12 +420,20 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case 0:  \
       int32_t rm32; \
       uint32_t ef_cf; \
-      if (rd != -1) rm32 = Rr(rd, 4); else rm32 = Mr(addr, 4); \
+      if (rd != -1) rm32 = Rr(rd, w); else rm32 = Mr(addr, w); \
       ef_cf = cpu.eflags.CF; \
-      add_eflags_width(rm32, (int32_t)(int8_t)1, 4); \
+      add_eflags_width(rm32, (int32_t)(int8_t)1, w); \
       cpu.eflags.CF = ef_cf; \
-      if (rd != -1) Rw(rd, 4, rm32 + 1); else Mw(addr, 4, rm32 + 1); \
+      if (rd != -1) Rw(rd, w, rm32 + 1); else Mw(addr, w, rm32 + 1); \
       break; \
+    case 1:{ \
+      int ef_cf; \
+      ef_cf = cpu.eflags.CF; \
+      sub_eflags_width(RMr(rd, w), (int32_t)1, w); \
+      cpu.eflags.CF = ef_cf; \
+      RMw(RMr(rd, w) - 1); \
+      break; \
+    } \
     case 2:  \
       ICall(RMr(rd, w), w); \
       break; \
@@ -438,6 +449,8 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 
 // 83 /0 ib ADD r/m16,imm8       2/7      Add sign-extended immediate byte to r/m word
 // 83 /0 ib ADD r/m32,imm8 2/7 Add sign-extended immediate byte to r/m dword
+// 83  /1 ib    OR r/m16,imm8     2/7       OR sign-extended immediate byte with r/m word
+// 83  /1 ib    OR r/m32,imm8     2/7       OR sign-extended immediate byte with r/m dword
 // 83 /2 ib  ADC r/m16,imm8   2/7       Add with CF sign-extended immediate byte to r/m word
 // 83 /2 ib  ADC r/m32,imm8   2/7       Add with CF sign-extended immediate byte into r/m dword
 // 83  /3 ib    SBB r/m16,imm8    2/7     Subtract with borrow sign-extended immediate byte from r/m word
@@ -459,7 +472,15 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
         Mw(addr, w, Mr(addr, w) + (int32_t)(int8_t)imm); \
       } \
       break; \
-    case 2:  \
+    case 1:  { \
+      uint32_t tmp_src, tmp_dst; \
+      tmp_dst = RMr(rd, w); \
+      tmp_src = (int32_t)(int8_t)imm; \
+      RMw(tmp_dst | tmp_src); \
+      or_eflags_width(tmp_dst, tmp_src, w); \
+      break; \
+    } \
+    case 2:  { \
       uint32_t tmp_cf, tmp_rs, tmp_rd; \
       tmp_cf = cpu.eflags.CF; \
       tmp_rs = (int32_t)(int8_t)imm; \
@@ -467,13 +488,15 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       add_eflags_width(tmp_rs, tmp_rd + tmp_cf, w); \
       RMw(tmp_rs + tmp_rd + tmp_cf); \
       break; \
-    case 3: \
+    } \
+    case 3: { \
       uint32_t tmp_src, tmp_dst; \
       tmp_dst = RMr(rd, w); \
       tmp_src = (int32_t)(int8_t)imm; \
       RMw(tmp_dst - tmp_src - cpu.eflags.CF); \
       sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w); \
       break; \
+    } \
     case 4:  \
       if (rd != -1) { \
         Rw(rd, w, Rr(rd, w) & (int32_t)(int8_t)imm); \
@@ -483,7 +506,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       cpu.eflags.CF = 0; \
       cpu.eflags.OF = 0; \
       break; \
-    case 5:  \
+    case 5:  { \
       int32_t dst = (rd!=-1 ? Rr(rd, w) : Mr(addr, w)); \
       int32_t src = (int32_t)(int8_t)imm; \
       int32_t calc_ret = dst - src; \
@@ -494,6 +517,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       } \
       sub_eflags_width(dst, src, w); \
       break;  \
+    } \
     case 6:  { \
       uint32_t rm_val, r_val; \
       rm_val = RMr(rd, w); \
@@ -639,6 +663,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 
 // F6   /0 ib   TEST r/m8,imm8    2/5      AND immediate byte with r/m byte
 // F6  /2      NOT r/m8        2/6          Reverse each bit of r/m byte
+// F6  /3  NEG r/m8      2/6       Two's complement negate r/m byte
 // F6  /4      MUL AL,r/m8     9-14/12-17   Unsigned multiply (AX := AL * r/m byte)
 // F6  /5      IMUL r/m8       9-14/12-17   AX= AL * r/m byte
 // F6  /6      DIV AL,r/m8     14/17        Unsigned divide AX by r/m byte (AL=Quo, AH=Rem)
@@ -660,37 +685,54 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
         Mw(addr, 1, rm8); \
       break; \
     } \
+    case 3: { /* NEG r/m8 */ \
+      uint8_t old = rm8; \
+      uint8_t res = (uint8_t)(0 - old); \
+      if (rd != -1) \
+        Rw(rd, 1, res); \
+      else \
+        Mw(addr, 1, res); \
+      cpu.eflags.CF = (old != 0); \
+      cpu.eflags.OF = (old == 0x80); \
+      EFLAGS_UPDATE_BY_RESULT(res, 1); \
+      break; \
+    } \
     case 4: { /* MUL r/m8 → AX = AL * r/m8 */ \
-      uint16_t res = (uint16_t)(cpu.gpr[R_AL]._8[0]) * (uint16_t)rm8; \
-      cpu.gpr[R_AL]._8[0] = res & 0xff; \
-      cpu.gpr[R_AH]._8[0] = (res >> 8) & 0xff; \
+      uint16_t dividend = cpu.gpr[R_EAX]._8[0]; \
+      uint16_t res = dividend * rm8; \
+      cpu.gpr[R_EAX]._8[0] = res & 0xff; \
+      cpu.gpr[R_EAX]._8[1] = (res >> 8) & 0xff; \
       cpu.eflags.CF = cpu.eflags.OF = ((res >> 8) != 0); \
       break; \
     } \
     case 5: { /* IMUL r/m8 → AX = AL * r/m8 (有符号) */ \
-      int16_t res = (int16_t)((int8_t)cpu.gpr[R_AL]._8[0] * (int8_t)rm8); \
-      cpu.gpr[R_AL]._8[0] = res & 0xff; \
-      cpu.gpr[R_AH]._8[0] = (res >> 8) & 0xff; \
-      cpu.eflags.CF = cpu.eflags.OF = (((res >> 7) != 0) && ((res >> 7) != -1)); \
+      int16_t dividend = (int8_t)cpu.gpr[R_EAX]._8[0]; \
+      int16_t divisor  = (int8_t)rm8; \
+      int16_t res = dividend * divisor; \
+      cpu.gpr[R_EAX]._8[0] = res & 0xff; \
+      cpu.gpr[R_EAX]._8[1] = (res >> 8) & 0xff; \
+      int16_t high = res >> 8; \
+      cpu.eflags.CF = cpu.eflags.OF = !(high == 0 || high == -1); \
       break; \
     } \
     case 6: { /* DIV r/m8 → AX / r/m8 */ \
-      uint16_t dividend = ((uint16_t)cpu.gpr[R_AH]._8[0] << 8) | cpu.gpr[R_AL]._8[0]; \
+      uint16_t dividend = (uint16_t)cpu.gpr[R_EAX]._16; \
       if (rm8 == 0) INV(s->pc); \
       uint8_t quo = dividend / rm8; \
       uint8_t rem = dividend % rm8; \
-      cpu.gpr[R_AL]._8[0] = quo; \
-      cpu.gpr[R_AH]._8[0] = rem; \
+      cpu.gpr[R_EAX]._8[0] = quo; \
+      cpu.gpr[R_EAX]._8[1] = rem; \
       break; \
     } \
     case 7: { /* IDIV r/m8 → AX / r/m8 (有符号) */ \
-      int16_t dividend = ((int16_t)((cpu.gpr[R_AH]._8[0] << 8) | cpu.gpr[R_AL]._8[0])); \
+      int16_t dividend = (int16_t)cpu.gpr[R_EAX]._16; \
       int8_t divisor = (int8_t)rm8; \
       if (divisor == 0) INV(s->pc); \
-      int8_t quo = dividend / divisor; \
-      int8_t rem = dividend % divisor; \
-      cpu.gpr[R_AL]._8[0] = quo; \
-      cpu.gpr[R_AH]._8[0] = rem; \
+      int16_t quo = dividend / divisor; \
+      int16_t rem = dividend % divisor; \
+      if (quo < -128 || quo > 127) INV(s->pc); \
+      cpu.gpr[R_EAX]._8[0] = (uint8_t)quo; \
+      cpu.gpr[R_EAX]._8[1] = (uint8_t)rem; \
       break; \
     } \
     default: INV(s->pc); \
@@ -700,6 +742,8 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 // F7   /0 iw   TEST r/m16,imm16  2/5      AND immediate word with r/m word
 // F7   /0 id   TEST r/m32,imm32  2/5      AND immediate dword with r/m dword
 // F7  /2      NOT r/m32        2/6         Reverse each bit of r/m dword
+// F7  /3  NEG r/m16     2/6       Two's complement negate r/m word
+// F7  /3  NEG r/m32     2/6       Two's complement negate r/m dword
 // F7  /4      MUL EAX,r/m32    9-38/12-41  Unsigned multiply (EDX:EAX := EAX * r/m dword)
 // F7  /5      IMUL r/m32       9-38/12-41  EDX:EAX := EAX * r/m dword
 // F7  /6      DIV EAX,r/m32    38/41       Unsigned divide EDX:EAX by r/m dword (EAX=Quo, EDX=Rem)
@@ -719,6 +763,21 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
         Rw(rd, 4, rm32); \
       else \
         Mw(addr, 4, rm32); \
+      break; \
+    } \
+    case 3: { /* NEG r/m8 */ \
+      uint32_t old = rm32; \
+      uint32_t res = (uint32_t)(0 - old); \
+      if (rd != -1) \
+        Rw(rd, w, res); \
+      else \
+        Mw(addr, w, res); \
+      cpu.eflags.CF = (old != 0); \
+      if (w == 2) \
+        cpu.eflags.OF = (old == 0x8000); \
+      else \
+        cpu.eflags.OF = (old == 0x80000000); \
+      EFLAGS_UPDATE_BY_RESULT(res, w); \
       break; \
     } \
     case 4: { /* MUL EAX, r/m32 → EDX:EAX = EAX * r/m32 (无符号) */ \
@@ -768,6 +827,8 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 // 81 /2 id  ADC r/m32,imm32  2/7       Add with CF immediate dword to r/m dword
 // 81  /3 iw    SBB r/m16,imm16   2/7     Subtract with borrow immediate word from r/m word
 // 81  /3 id    SBB r/m32,imm32   2/7     Subtract with borrow immediate dword from r/m dword
+// 81  /5 iw   SUB r/m16,imm16  2/7      Subtract immediate word from r/m word
+// 81  /5 id   SUB r/m32,imm32  2/7      Subtract immediate dword from r/m dword
 // 81  /6 iw   XOR r/m16,imm16  2/7      Exclusive-OR immediate word to r/m word
 // 81  /6 id   XOR r/m32,imm32  2/7      Exclusive-OR immediate dword to r/m dword
 // 81  /7 iw       CMP r/m16,imm16    2/5      Compare immediate word to r/m word
@@ -799,6 +860,18 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       RMw(tmp_dst - tmp_src - cpu.eflags.CF); \
       sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w); \
       break; \
+    } \
+    case 5: { \
+      int32_t dst = (rd!=-1 ? Rr(rd, w) : Mr(addr, w)); \
+      int32_t src = (int32_t)imm; \
+      int32_t calc_ret = dst - src; \
+      if (rd != -1) { \
+        Rw(rd, w, calc_ret); \
+      } else { \
+        Mw(addr, w, calc_ret); \
+      } \
+      sub_eflags_width(dst, src, w); \
+      break;  \
     } \
     case 6:  { \
       uint32_t rm_val, r_val; \
@@ -869,6 +942,31 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
       break; \
     } \
     \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
+// FE  /0      INC r/m8                       Increment r/m byte by 1
+// FE /1     DEC r/m8           2/6      Decrement r/m byte by 1
+#define gp14() do { \
+  switch (gp_idx) { \
+    case 0:  \
+      int8_t rm8; \
+      uint32_t ef_cf; \
+      if (rd != -1) rm8 = Rr(rd, 1); else rm8 = Mr(addr, 1); \
+      ef_cf = cpu.eflags.CF; \
+      add_eflags_width(rm8, (int32_t)(int8_t)1, 1); \
+      cpu.eflags.CF = ef_cf; \
+      if (rd != -1) Rw(rd, 1, rm8 + 1); else Mw(addr, 1, rm8 + 1); \
+      break; \
+    case 1:{ \
+      int ef_cf; \
+      ef_cf = cpu.eflags.CF; \
+      sub_eflags_width(RMr(rd, w), (int32_t)(int8_t)1, w); \
+      cpu.eflags.CF = ef_cf; \
+      RMw(RMr(rd, w) - 1); \
+      break; \
+    } \
     default: INV(s->pc); \
   }; \
 } while (0)
@@ -959,8 +1057,10 @@ again:
   // 05 id     ADD EAX,imm32        2        Add immediate dword to EAX
   INSTPAT("0000 0101", add,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_rs, tmp_rd; tmp_rs = imm; tmp_rd = Rr(R_EAX, w); add_eflags_width(tmp_rd, tmp_rs, w); Rw(R_EAX, w, tmp_rs + tmp_rd);  );
 
+  // 08  /r       OR r/m8,r8        2/6       OR byte register to r/m byte
+  INSTPAT("0000 1000", or8,       G2E,  1, uint8_t rm_val = RMr(rd, w); RMw(rm_val | src1); or_eflags_width(rm_val, src1, w););
   // 09  /r       OR r/m32,r32      2/6       OR dword register to r/m dword
-  INSTPAT("0000 1001", or,        G2E,  4, uint32_t rm_val = RMr(rd, 4); RMw(rm_val | src1); or_eflags_width(rm_val, src1, 4););
+  INSTPAT("0000 1001", or,        G2E,  is_operand_size_16==true ? 2 : 4, uint32_t rm_val = RMr(rd, w); RMw(rm_val | src1); or_eflags_width(rm_val, src1, w););
 
   // 0A  /r       OR r8,r/m8        2/7       OR r/m byte to byte register
   INSTPAT("0000 1010", or,        E2G,  1, int8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst | tmp_src); or_eflags_width(tmp_dst, tmp_src, w););
@@ -999,11 +1099,17 @@ again:
   // 1D  id       SBB EAX,imm32     2       Subtract with borrow immediate dword from EAX
   INSTPAT("0001 1101", sbb,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(R_EAX, w); tmp_src = imm; Rw(R_EAX, w, tmp_dst - tmp_src - cpu.eflags.CF); sub_eflags_width(tmp_dst, tmp_src + cpu.eflags.CF, w););
 
+  // 20 /r     AND r/m8,r8          2/7       AND byte register to r/m byte
+  INSTPAT("0010 0000", and8,      G2E,  1, uint8_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); RMw(tmp_dst & tmp_src));
+  // 21 /r     AND r/m16,r16        2/7       AND word register to r/m word
+  // 21 /r     AND r/m32,r32        2/7       AND dword register to r/m dword
+  INSTPAT("0010 0001", and,       G2E,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); RMw(tmp_dst & tmp_src));
+
   // 22 /r     AND r8,r/m8          2/6       AND r/m byte to byte register
   INSTPAT("0010 0010", and8,      E2G,  1, uint8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); Rw(rd, w, tmp_dst & tmp_src));
 
   // 23 /r     AND r32,r/m32        2/6       AND r/m dword to dword register
-  INSTPAT("0010 0011", and,       E2G,  4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); Rw(rd, w, tmp_dst & tmp_src));
+  INSTPAT("0010 0011", and,       E2G,  is_operand_size_16==true ? 2 : 4, uint32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT(tmp_dst & tmp_src, w); Rw(rd, w, tmp_dst & tmp_src));
 
   // 28  /r      SUB r/m8,r8      2/6      Subtract byte register from r/m byte
   INSTPAT("0010 1000", sub_rm8_r8,   G2E, 1, uint8_t tmp_src, tmp_dst; tmp_dst = RMr(rd, w); tmp_src = Rr(rs, w); RMw(tmp_dst - tmp_src); sub_eflags_width(tmp_dst, tmp_src, w););
@@ -1031,7 +1137,7 @@ again:
   // 35  id      XOR EAX,imm32    2        Exclusive-OR immediate dword to EAX
   INSTPAT("0011 0101", xor,       Imm,  is_operand_size_16==true ? 2 : 4, uint32_t rm_val, r_val; rm_val = imm; r_val = Rr(R_EAX, w); Rw(R_EAX, w, rm_val ^ r_val);  xor_eflags_width(r_val, rm_val, w););
 
-  // 38  /r          CMP r/m8,r8        2/5      Compare byte register to r/mbyte
+  // 38  /r          CMP r/m8,r8        2/5      Compare byte register to r/m byte
   INSTPAT("0011 1000", cmp,       G2E,  1, cmp_eflags_signextend_width(RMr(rd, w), Rr(rs, w), w););
   // 39  /r          CMP r/m32,r32      2/5      Compare dword register to r/m dword
   INSTPAT("0011 1001", cmp,       G2E,  is_operand_size_16==true ? 2 : 4, cmp_eflags_signextend_width(RMr(rd, w), Rr(rs, w), w););
@@ -1164,6 +1270,9 @@ again:
 
   // F7
   INSTPAT("1111 0111", gp7,       GP67,  is_operand_size_16==true ? 2 : 4, gp7());
+
+  // FE
+  INSTPAT("1111 1110", gp14,      X2E,   1, gp14());
 
   INSTPAT("1111 1111", gp2,       X2E,   1, gp2());
 

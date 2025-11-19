@@ -39,7 +39,7 @@ typedef struct IRingBuf {
 } IRingBuf;
 
 static word_t iRBHeader;
-static IRingBuf iRingBuf[16];
+static IRingBuf iRingBuf[160];
 
 static void ibuffer_insert(const char* logbuf) {
   memcpy(iRingBuf[iRBHeader].logbuf, logbuf, strlen(logbuf) + 1);
@@ -176,7 +176,7 @@ void cpu_exec(uint64_t n) {
             ANSI_FMT("HIT BAD TRAP", ANSI_FG_RED))),
           nemu_state.halt_pc);
 #ifdef CONFIG_ITRACE
-      if(NEMU_ABORT == nemu_state.state)
+      if(NEMU_ABORT == nemu_state.state || nemu_state.halt_ret != 0)
         ibuffer_print();
 #endif
       // fall through

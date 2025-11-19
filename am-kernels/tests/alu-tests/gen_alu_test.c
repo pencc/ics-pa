@@ -32,6 +32,7 @@ static const unsigned char  vuc[]={0x80, 0x81, -2, -1, 0, 1, 2, 0x7e, 0x7f};
 #define S_F "%f"
 #define S_I "%d"
 
+#if 1
 #define FOR_SET(ss,tt,string,type,set,op) {\
   int i, j; \
   int c=sizeof((set))/sizeof(*(set)); \
@@ -42,10 +43,25 @@ static const unsigned char  vuc[]={0x80, 0x81, -2, -1, 0, 1, 2, 0x7e, 0x7f};
         printf("  volatile %s x=" ss "; volatile %s y=" ss ";\n", #type, set[i], #type, set[j]); \
         printf("  if ((%s)(x%sy)!=(%s)%d) {\n", #type, #op, #type, (type)(set[i] op set[j])); \
         printf(string, TEST_PARMS(type,set,op)); \
-        printf("  exit_code = 1;}}\n"); \
+        printf(" exit_code = 1; panic(\"Unhandled event\");}}\n"); \
 	  } \
 	} \
 }
+#else
+#define FOR_SET(ss,tt,string,type,set,op) {\
+  int i, j; \
+  int c=sizeof((set))/sizeof(*(set)); \
+  for (i=0; i<c; i++) \
+    for (j=i; j<c; j++) { \
+      if (!exclude(tt, #op, set[i], set[j])) { \
+        printf("{\n"); \
+        printf("  volatile %s x=" ss "; volatile %s y=" ss ";\n", #type, set[i], #type, set[j]); \
+        printf("  if ((%s)(x%sy)!=(%s)%d) {\n", #type, #op, #type, (type)(set[i] op set[j])); \
+        printf(" exit_code = 1; halt(1);}}\n"); \
+	  } \
+	} \
+}
+#endif
 
 #define FOR_SET_ALL(type,set) {\
   FOR_SET(S_I,I,TEST_STRING,type,set,+); \
@@ -114,6 +130,9 @@ int exclude(type t, char* op, int x, int y)
 int main(void)
 {
   printf("#include <stdio.h>\n");
+  printf("#include <am.h>\n");
+  printf("#include <klib.h>\n");
+  printf("#include <klib-macros.h>\n");
   printf("int main(void) {\n");
   printf("  int exit_code = 0;\n");
 
