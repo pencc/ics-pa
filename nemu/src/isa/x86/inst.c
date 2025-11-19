@@ -1006,10 +1006,51 @@ void _2byte_esc(Decode *s, bool is_operand_size_16) {
   INSTPAT("1000 1110", jle,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 1 || cpu.eflags.SF != cpu.eflags.OF) jmp(imm););
   // 0F 8F  JNLE rel16/32     Jump near if not less or equal (ZF=0 and SF==OF)
   INSTPAT("1000 1111", jnle, Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.ZF == 0 && cpu.eflags.SF == cpu.eflags.OF) jmp(imm););
-  // 0F  94   SETE r/m8    4/5     Set byte if equal (ZF=1)
-  INSTPAT("1001 0100", sete,    E2G,    1, if (rs != -1) Rw(rs, w, (1 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
-  // 0F  95   SETNE r/m8   4/5     Set byte if not equal (ZF=0)
-  INSTPAT("1001 0101", setne,   E2G,    1, if (rs != -1) Rw(rs, w, (0 == cpu.eflags.ZF)); else Mw(addr, w, (1 == cpu.eflags.ZF)););
+  // 0F 90 SETO r/m8   OF=1
+  INSTPAT("1001 0000", seto,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.OF); else Mw(addr, w, cpu.eflags.OF););
+  // 0F 91 SETNO r/m8  OF=0
+  INSTPAT("1001 0001", setno,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.OF); else Mw(addr, w, !cpu.eflags.OF););
+  // 0F 92 SETB/SETC r/m8  CF=1
+  INSTPAT("1001 0010", setb,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.CF); else Mw(addr, w, cpu.eflags.CF););
+  INSTPAT("1001 0010", setc,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.CF); else Mw(addr, w, cpu.eflags.CF););
+  // 0F 93 SETAE/SETNB/SETNC r/m8  CF=0
+  INSTPAT("1001 0011", setae,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.CF); else Mw(addr, w, !cpu.eflags.CF););
+  INSTPAT("1001 0011", setnb,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.CF); else Mw(addr, w, !cpu.eflags.CF););
+  INSTPAT("1001 0011", setnc,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.CF); else Mw(addr, w, !cpu.eflags.CF););
+  // 0F 94 SETE/SETZ r/m8  ZF=1
+  INSTPAT("1001 0100", sete,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.ZF); else Mw(addr, w, cpu.eflags.ZF););
+  INSTPAT("1001 0100", setz,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.ZF); else Mw(addr, w, cpu.eflags.ZF););
+  // 0F 95 SETNE/SETNZ r/m8  ZF=0
+  INSTPAT("1001 0101", setne,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF); else Mw(addr, w, !cpu.eflags.ZF););
+  INSTPAT("1001 0101", setnz,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF); else Mw(addr, w, !cpu.eflags.ZF););
+  // 0F 96 SETBE/SETNA r/m8  CF=1 or ZF=1
+  INSTPAT("1001 0110", setbe,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.CF || cpu.eflags.ZF); else Mw(addr, w, cpu.eflags.CF || cpu.eflags.ZF););
+  INSTPAT("1001 0110", setna,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.CF || cpu.eflags.ZF); else Mw(addr, w, cpu.eflags.CF || cpu.eflags.ZF););
+  // 0F 97 SETA/SETNBE r/m8  CF=0 and ZF=0
+  INSTPAT("1001 0111", seta,     E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.CF && !cpu.eflags.ZF); else Mw(addr, w, !cpu.eflags.CF && !cpu.eflags.ZF););
+  INSTPAT("1001 0111", setnbe,   E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.CF && !cpu.eflags.ZF); else Mw(addr, w, !cpu.eflags.CF && !cpu.eflags.ZF););
+  // 0F 98 SETS r/m8  SF=1
+  INSTPAT("1001 1000", sets,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.SF); else Mw(addr, w, cpu.eflags.SF););
+  // 0F 99 SETNS r/m8  SF=0
+  INSTPAT("1001 1001", setns,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.SF); else Mw(addr, w, !cpu.eflags.SF););
+  // 0F 9A SETP/SETPE r/m8  PF=1
+  INSTPAT("1001 1010", setp,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.PF); else Mw(addr, w, cpu.eflags.PF););
+  INSTPAT("1001 1010", setpe,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.PF); else Mw(addr, w, cpu.eflags.PF););
+  // 0F 9B SETNP/SETPO r/m8  PF=0
+  INSTPAT("1001 1011", setnp,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.PF); else Mw(addr, w, !cpu.eflags.PF););
+  INSTPAT("1001 1011", setpo,    E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.PF); else Mw(addr, w, !cpu.eflags.PF););
+  // 0F 9C SETL/SETNGE r/m8  SF!=OF
+  INSTPAT("1001 1100", setl,     E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.SF != cpu.eflags.OF); else Mw(addr, w, cpu.eflags.SF != cpu.eflags.OF););
+  INSTPAT("1001 1100", setnge,   E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.SF != cpu.eflags.OF); else Mw(addr, w, cpu.eflags.SF != cpu.eflags.OF););
+  // 0F 9D SETGE/SETNL r/m8  SF=OF
+  INSTPAT("1001 1101", setge,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.SF == cpu.eflags.OF); else Mw(addr, w, cpu.eflags.SF == cpu.eflags.OF););
+  INSTPAT("1001 1101", setnl,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.SF == cpu.eflags.OF); else Mw(addr, w, cpu.eflags.SF == cpu.eflags.OF););
+  // 0F 9E SETLE/SETNG r/m8  ZF=1 or SF!=OF
+  INSTPAT("1001 1110", setle,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.ZF || (cpu.eflags.SF != cpu.eflags.OF)); else Mw(addr, w, cpu.eflags.ZF || (cpu.eflags.SF != cpu.eflags.OF)););
+  INSTPAT("1001 1110", setng,    E2G, 1, if (rs != -1) Rw(rs, w, cpu.eflags.ZF || (cpu.eflags.SF != cpu.eflags.OF)); else Mw(addr, w, cpu.eflags.ZF || (cpu.eflags.SF != cpu.eflags.OF)););
+  // 0F 9F SETG/SETNLE r/m8  ZF=0 and SF=OF
+  INSTPAT("1001 1111", setg,     E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)); else Mw(addr, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)););
+  INSTPAT("1001 1111", setnle,   E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)); else Mw(addr, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)););
   // 0F  B6 /r   MOVZX r16,r/m8     3/6      Move byte to word with zero-extend
   // 0F  B6 /r   MOVZX r32,r/m8     3/6      Move byte to dword, zero-extend
   INSTPAT("1011 0110", movzx,   E2G,    is_operand_size_16==true ? 2 : 4, if (rs != -1) Rw(rd, w, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, w, (uint32_t)(uint8_t)Mr(addr, 1)););
