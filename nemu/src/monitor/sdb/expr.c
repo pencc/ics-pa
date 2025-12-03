@@ -125,8 +125,8 @@ static bool make_token(char *e) {
           case TK_NUMBER:
           case TK_HEX_NUMBER:
           case TK_REG_NAME:
-            Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
-                i, rules[i].regex, position, substr_len, substr_len, substr_start);
+            // Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
+            //     i, rules[i].regex, position, substr_len, substr_len, substr_start);
             check_nr_valid();
             check_substr_valid(substr_len);
             memset(tokens[nr_token].str, 0, sizeof(tokens[0].str) / sizeof(char));
@@ -146,8 +146,8 @@ static bool make_token(char *e) {
                              || TK_OPENPARENTHESIS == tokens[nr_token - 1].type
                              || TK_AND == tokens[nr_token - 1].type
                              || TK_EQ == tokens[nr_token - 1].type) {
-              Log("match (TK_DEREF) rules[%d] = \"%s\" at position %d with len %d: %.*s",
-                   i, rules[i].regex, position, substr_len, substr_len, substr_start);
+              // Log("match (TK_DEREF) rules[%d] = \"%s\" at position %d with len %d: %.*s",
+              //      i, rules[i].regex, position, substr_len, substr_len, substr_start);
               check_nr_valid();
               tokens[nr_token].type = TK_DEREF;
               nr_token++;
@@ -156,8 +156,8 @@ static bool make_token(char *e) {
           case TK_DIVIDE:
           case TK_OPENPARENTHESIS:
           case TK_CLOSEPARENTHESIS:
-            Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
-                i, rules[i].regex, position, substr_len, substr_len, substr_start);
+            // Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
+            //     i, rules[i].regex, position, substr_len, substr_len, substr_start);
             check_nr_valid();
             tokens[nr_token].type = rules[i].token_type;
             nr_token++;
@@ -226,15 +226,15 @@ static inline int eval(int token_start, int token_end)
   token_diff = token_end - token_start;
   if(0 == token_diff || 1 == token_diff) {
     if(0 == token_diff && TK_NUMBER == tokens[token_start].type) {  // TK_NUMBER
-      Log("match TK_NUMBER, eval return number:%s;", tokens[token_start].str);
+      // Log("match TK_NUMBER, eval return number:%s;", tokens[token_start].str);
       return atoi(tokens[token_start].str);
     } else if(0 == token_diff && TK_HEX_NUMBER == tokens[token_start].type) { // TK_HEX_NUMBER
-      Log("match TK_HEX_NUMBER, eval return number:%s;", tokens[token_start].str);
+      // Log("match TK_HEX_NUMBER, eval return number:%s;", tokens[token_start].str);
       return strtol(tokens[token_start].str, NULL, 16);
     } else if(1 == token_diff
               && TK_DEREF == tokens[token_start].type
               && (TK_NUMBER == tokens[token_end].type || TK_HEX_NUMBER == tokens[token_end].type)) { // TK_DEREF
-      Log("match TK_DEREF, eval pointer: *%s;", tokens[token_end].str);
+      // Log("match TK_DEREF, eval pointer: *%s;", tokens[token_end].str);
 #if EXPR_UNIT_TEST_ENABLED
       return 1;
 #else
@@ -246,7 +246,7 @@ static inline int eval(int token_start, int token_end)
       return ret_result;
 #endif
     } else if(0 == token_diff && TK_REG_NAME == tokens[token_start].type) {  // TK_REG_NAME
-      Log("match TK_REG_NAME, reg:%s;", tokens[token_end].str);
+      // Log("match TK_REG_NAME, reg:%s;", tokens[token_end].str);
 #if EXPR_UNIT_TEST_ENABLED
       return 2;
 #else
@@ -267,7 +267,7 @@ static inline int eval(int token_start, int token_end)
   if(TK_OPENPARENTHESIS == tokens[token_start].type
       && TK_CLOSEPARENTHESIS == tokens[token_end].type
       && check_parentheses(token_start + 1, token_end - 1)) {
-    Log("match TK_OPENPARENTHESIS/TK_CLOSEPARENTHESIS in start/end, parse inner expr;");
+    // Log("match TK_OPENPARENTHESIS/TK_CLOSEPARENTHESIS in start/end, parse inner expr;");
     return eval(token_start + 1, token_end - 1);
   }
 
@@ -280,20 +280,20 @@ static inline int eval(int token_start, int token_end)
       // 找到)后寻找对应的(并跳过中间表达式
       case TK_OPENPARENTHESIS:
         parenthesis_num++;
-        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       case TK_CLOSEPARENTHESIS:
         parenthesis_num--;
-        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       // 找到==或&&后将符号先后进行分割并分别调用递归函数，并用+或-相连接
       case TK_EQ:
         if(0 != parenthesis_num) continue;
-        Log("match TK_EQ, do eval call");
+        // Log("match TK_EQ, do eval call");
         return eval(token_start, token_tmp - 1) == eval(token_tmp + 1, token_end);
       case TK_AND:
         if(0 != parenthesis_num) continue;
-        Log("match TK_AND, do eval call");
+        // Log("match TK_AND, do eval call");
         return eval(token_start, token_tmp - 1) && eval(token_tmp + 1, token_end);
       default:
         break;
@@ -309,20 +309,20 @@ static inline int eval(int token_start, int token_end)
       // 找到)后寻找对应的(并跳过中间表达式
       case TK_OPENPARENTHESIS:
         parenthesis_num++;
-        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       case TK_CLOSEPARENTHESIS:
         parenthesis_num--;
-        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       // 找到+或-后将符号先后进行分割并分别调用递归函数，并用+或-相连接
       case TK_ADD:
         if(0 != parenthesis_num) continue;
-        Log("match TK_ADD, do eval call");
+        // Log("match TK_ADD, do eval call");
         return eval(token_start, token_tmp - 1) + eval(token_tmp + 1, token_end);
       case TK_SUB:
         if(0 != parenthesis_num) continue;
-        Log("match TK_SUB, do eval call");
+        // Log("match TK_SUB, do eval call");
         return eval(token_start, token_tmp - 1) - eval(token_tmp + 1, token_end);
       default:
         break;
@@ -337,20 +337,20 @@ static inline int eval(int token_start, int token_end)
       // 找到)后寻找对应的(并跳过中间表达式
       case TK_OPENPARENTHESIS:
         parenthesis_num++;
-        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       case TK_CLOSEPARENTHESIS:
         parenthesis_num--;
-        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       // 找到*或/后将符号先后进行分割并分别调用递归函数，并用*或/相连接
       case TK_MULTIPLY:
         if(0 != parenthesis_num) continue;
-        Log("match TK_MULTIPLY, do eval call");
+        // Log("match TK_MULTIPLY, do eval call");
         return eval(token_start, token_tmp - 1) * eval(token_tmp + 1, token_end);
       case TK_DIVIDE:
         if(0 != parenthesis_num) continue;
-        Log("match TK_DIVIDE, do eval call");
+        // Log("match TK_DIVIDE, do eval call");
         return eval(token_start, token_tmp - 1) / eval(token_tmp + 1, token_end);
       default:
         break;
@@ -365,16 +365,16 @@ static inline int eval(int token_start, int token_end)
       // 找到)后寻找对应的(并跳过中间表达式
       case TK_OPENPARENTHESIS:
         parenthesis_num++;
-        Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_OPENPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       case TK_CLOSEPARENTHESIS:
         parenthesis_num--;
-        Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
+        // Log("match TK_CLOSEPARENTHESIS, parenthesis_num:%d;", parenthesis_num);
         break;
       // 找到*或/后将符号先后进行分割并分别调用递归函数，并用*或/相连接
       case TK_DEREF:
         if(0 != parenthesis_num) continue;
-        Log("match TK_DEREF, do eval call");
+        // Log("match TK_DEREF, do eval call");
 #if EXPR_UNIT_TEST_ENABLED
         return 1;
 #else
