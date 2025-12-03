@@ -112,6 +112,11 @@ bool __isa_reg_str2val(const char **reg, const char *s, word_t *reg_result)
     }
   }
 
+  if(!strcmp(s, "pc")) {
+    *reg_result = cpu.pc;
+    reg_found = true;
+  }
+
   return reg_found;
 }
 
