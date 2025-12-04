@@ -262,7 +262,9 @@ enum {
   TYPE_I2r,  // XX <- Ib / eXX <- Iv
   TYPE_I2a,  // AL <- Ib / eAX <- Iv
   TYPE_G2E,  // Eb <- Gb / Ev <- Gv
+  TYPE_GI82E,
   TYPE_E2G,  // Gb <- Eb / Gv <- Ev
+  TYPE_EI2G,
   TYPE_I2E,  // Eb <- Ib / Ev <- Iv
   TYPE_X2E,
   TYPE_GP67,
@@ -323,7 +325,9 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   switch (type) {
     case TYPE_I2r:  destr(opcode & 0x7); imm(); break;
     case TYPE_G2E:  decode_rm(s, rd_, addr, rs, w); src1r(*rs); break;
+    case TYPE_GI82E: decode_rm(s, rd_, addr, rs, w); *imm = x86_inst_fetch(s, 1); break;
     case TYPE_E2G:  decode_rm(s, rs, addr, rd_, w); break;
+    case TYPE_EI2G: decode_rm(s, rs, addr, rd_, w); *imm = x86_inst_fetch(s, w); break;
     case TYPE_I2E:  decode_rm(s, rd_, addr, gp_idx, w); imm(); break;
     case TYPE_X2E:  decode_rm(s, rd_, addr, gp_idx, w); break;
     case TYPE_GP67: decode_rm(s, rd_, addr, gp_idx, w); if(0 == *gp_idx) *imm = x86_inst_fetch(s, w); break;
@@ -610,6 +614,14 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+// D3  /0       ROL r/m16,CL      3/7     Rotate 16 bits r/m word left CL times
+// D3  /0       ROL r/m32,CL      3/7     Rotate 32 bits r/m dword left CL times
+// D3  /1       ROR r/m16,CL      3/7     Rotate 16 bits r/m word right CL times
+// D3  /1       ROR r/m32,CL      3/7     Rotate 32 bits r/m dword right CL times
+// D3  /2       RCL r/m16,CL      9/10    Rotate 17 bits (CF,r/m word) left CL times
+// D3  /2       RCL r/m32,CL      9/10    Rotate 33 bits (CF,r/m dword) left CL times
+// D3  /3       RCR r/m16,CL      9/10    Rotate 17 bits (CF,r/m word) right CL times
+// D3  /3       RCR r/m32,CL      9/10    Rotate 33 bits (CF,r/m dword) right CL times
 // D3   /4         SAL r/m32,CL      3/7     Multiply r/m dword by 2, CL times
 // D3   /4         SHL r/m32,CL      3/7     Multiply r/m dword by 2, CL times
 // D3   /5         SHR r/m32,CL      3/7     Unsigned divide r/m dword by 2,CL times
@@ -624,6 +636,80 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
 #define gp5() do { \
   w = is_operand_size_16==true ? 2 : 4; \
   switch (gp_idx) { \
+    case 0: { \
+      uint32_t rd_val, result; \
+      uint32_t imm = Rr(R_CL, 1) & 0x1F; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      if (imm == 0) break; \
+      rd_val = RMr(rd, w) & mask; \
+      uint32_t width = w * 8; \
+      result = ((rd_val << imm) | (rd_val >> (width - imm))) & mask; \
+      cpu.eflags.CF = (result & 1); \
+      if (imm == 1) { \
+        uint32_t msb_before = (rd_val >> (width - 1)) & 1; \
+        uint32_t msb_after  = (result >> (width - 1)) & 1; \
+        cpu.eflags.OF = (msb_before ^ msb_after); \
+      } \
+      RMw(result); \
+      break; \
+    } \
+    case 1: { \
+      uint32_t rd_val, result; \
+      uint32_t imm = Rr(R_CL, 1) & 0x1F; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      if (imm == 0) break; \
+      rd_val = RMr(rd, w) & mask; \
+      uint32_t width = w * 8; \
+      result = ((rd_val >> imm) | (rd_val << (width - imm))) & mask; \
+      cpu.eflags.CF = (result >> (width - 1)) & 1; \
+      if (imm == 1) { \
+        uint32_t msb = (result >> (width - 1)) & 1; \
+        uint32_t next_msb = (result >> (width - 2)) & 1; \
+        cpu.eflags.OF = (msb ^ next_msb); \
+      } \
+      RMw(result); \
+      break; \
+    } \
+    case 2: { \
+      uint32_t rd_val, result; \
+      uint32_t imm = Rr(R_CL, 1) & 0x1F; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      if (imm == 0) break; \
+      rd_val = RMr(rd, w) & mask; \
+      uint32_t width = w * 8; \
+      uint64_t ext = ((uint64_t)cpu.eflags.CF << width) | rd_val; \
+      imm %= (width + 1); \
+      if (imm == 0) break; \
+      uint64_t new_ext = ((ext << imm) | (ext >> ((width + 1) - imm))) & ((1ull << (width+1)) - 1); \
+      cpu.eflags.CF = (new_ext >> width) & 1; \
+      result = new_ext & mask; \
+      if (imm == 1) { \
+        uint32_t msb_before = (rd_val >> (width - 1)) & 1; \
+        cpu.eflags.OF = (msb_before ^ cpu.eflags.CF); \
+      } \
+      RMw(result); \
+      break; \
+    } \
+    case 3: { \
+      uint32_t rd_val, result; \
+      uint32_t imm = Rr(R_CL, 1) & 0x1F; \
+      uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF); \
+      if (imm == 0) break; \
+      uint32_t width = w * 8; \
+      rd_val = RMr(rd, w) & mask; \
+      uint64_t ext = ((uint64_t)cpu.eflags.CF << width) | rd_val; \
+      imm %= (width + 1); \
+      if (imm == 0) break; \
+      uint64_t new_ext = ((ext >> imm) | (ext << ((width + 1) - imm))) & ((1ull << (width+1)) - 1); \
+      cpu.eflags.CF = new_ext & 1; \
+      result = (new_ext >> 1) & mask; \
+      if (imm == 1) { \
+        uint32_t msb = (result >> (width - 1)) & 1; \
+        cpu.eflags.OF = (msb ^ ((new_ext >> width) & 1)); \
+      } \
+      RMw(result); \
+      break; \
+    } \
     case 4:  { \
       uint32_t rd_val, rd_val_shift; \
       uint32_t imm = Rr(R_CL, 1); \
@@ -1140,6 +1226,28 @@ void _2byte_esc(Decode *s, bool is_operand_size_16) {
   // 0F 9F SETG/SETNLE r/m8  ZF=0 and SF=OF
   INSTPAT("1001 1111", setg,     E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)); else Mw(addr, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)););
   INSTPAT("1001 1111", setnle,   E2G, 1, if (rs != -1) Rw(rs, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)); else Mw(addr, w, !cpu.eflags.ZF && (cpu.eflags.SF == cpu.eflags.OF)););
+  // 0F  AC   SHRD r/m16,r16,imm8   3/7     r/m16 gets SHR of r/m16 concatenated with r16
+  // 0F  AC   SHRD r/m32,r32,imm8   3/7     r/m32 gets SHR of r/m32 concatenated with r32
+  INSTPAT("1010 1100", shrdrmrimm,   GI82E, is_operand_size_16==true ? 2 : 4, uint32_t rm_val = RMr(rd, w);
+                                                                          uint32_t src_val = Rr(rs, w);
+                                                                          uint32_t width = w * 8;  // 16 或 32
+                                                                          uint32_t mask = (w == 2 ? 0xFFFF : 0xFFFFFFFF);
+                                                                          uint32_t result;
+                                                                          if (imm == 0) return;
+                                                                          cpu.eflags.CF = (rm_val >> (imm - 1)) & 1;
+                                                                          result = ((rm_val >> imm) | (src_val << (width - imm))) & mask;
+                                                                          if (imm == 1) {
+                                                                            uint32_t msb_old = (rm_val >> (width - 1)) & 1;
+                                                                            uint32_t msb_src = (src_val >> (width - 1)) & 1;
+                                                                            cpu.eflags.OF = (msb_old != msb_src);
+                                                                          }
+                                                                          EFLAGS_UPDATE_BY_RESULT(result, w);
+                                                                          RMw(result););
+
+
+  // 0F  AD   SHRD r/m16,r16,CL     3/7     r/m16 gets SHR of r/m16 concatenated with r16
+  // 0F  AD   SHRD r/m32,r32,CL     3/7     r/m32 gets SHR of r/m32 concatenated with r32
+
   // 0F  B6 /r   MOVZX r16,r/m8     3/6      Move byte to word with zero-extend
   // 0F  B6 /r   MOVZX r32,r/m8     3/6      Move byte to dword, zero-extend
   INSTPAT("1011 0110", movzx,   E2G,    is_operand_size_16==true ? 2 : 4, if (rs != -1) Rw(rd, w, (uint32_t)(uint8_t)Rr(rs, 1)); else Rw(rd, w, (uint32_t)(uint8_t)Mr(addr, 1)););
@@ -1194,6 +1302,14 @@ again:
 
   // 0A  /r       OR r8,r/m8        2/7       OR r/m byte to byte register
   INSTPAT("0000 1010", or,        E2G,  1, int8_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst | tmp_src); or_eflags_width(tmp_dst, tmp_src, w););
+  // 0B  /r       OR r16,r/m16      2/7       OR r/m word to word register
+  // 0B  /r       OR r32,r/m32      2/7       OR r/m dword to dword register
+  INSTPAT("0000 1011", or,        E2G,  is_operand_size_16==true ? 2 : 4, int32_t tmp_src, tmp_dst; tmp_dst = Rr(rd, w); tmp_src = RMr(rs, w); Rw(rd, w, tmp_dst | tmp_src); or_eflags_width(tmp_dst, tmp_src, w););
+  // 0C  ib       OR AL,imm8        2         OR immediate byte to AL
+  INSTPAT("0000 1100", or,       Imm8,  1, int8_t tmp_src, tmp_dst; tmp_dst = Rr(R_AL, w); tmp_src = imm; Rw(R_AL, w, tmp_dst | tmp_src); or_eflags_width(tmp_dst, tmp_src, w););
+  // 0D  iw       OR AX,imm16       2         OR immediate word to AX
+  // 0D  id       OR EAX,imm32      2         OR immediate dword to EAX
+  INSTPAT("0000 1101", or,        Imm,  is_operand_size_16==true ? 2 : 4, int32_t tmp_src, tmp_dst; tmp_dst = Rr(R_EAX, w); tmp_src = imm; Rw(R_EAX, w, tmp_dst | tmp_src); or_eflags_width(tmp_dst, tmp_src, w););
 
   INSTPAT("0000 1111", 2byte_esc, N,    0, _2byte_esc(s, is_operand_size_16));
 
@@ -1303,6 +1419,17 @@ again:
 
   // 68 PUSH imm32 2 Push immediate dword
   INSTPAT("0110 1000", push32,    Imm,  is_operand_size_16==true ? 2 : 4, Push(imm, w));
+  // 69  /r iw   IMUL r16,r/m16,imm16   9-22/12-25  word register := r/m16 * immediate word
+  // 69  /r id   IMUL r32,r/m32,imm32   9-38/12-41  dword register := r/m32 * immediate dword
+  INSTPAT("0110 1001", imul3,     EI2G,  is_operand_size_16==true ? 2 : 4, uint32_t src; int64_t res;
+                                                                          src = RMr(rs, w);
+                                                                          res = (int64_t)(int32_t)src * (int64_t)(int32_t)imm;
+                                                                          Rw(rd, w, (uint32_t)(res & ((w == 2) ? 0xffff : 0xffffffff)));
+                                                                          uint64_t sign_mask = ((w == 2) ? 0x8000 : 0x80000000);
+                                                                          uint64_t high_mask = ((w == 2) ? 0xffff0000ULL : 0xffffffff00000000ULL);
+                                                                          uint64_t high_bits = res & high_mask;
+                                                                          uint64_t sign_ext = ((res & sign_mask) ? high_mask : 0ULL);
+                                                                          cpu.eflags.CF = cpu.eflags.OF = (high_bits != sign_ext););
   // 6A PUSH imm8 2 Push immediate byte, with sign-extended.
   INSTPAT("0110 1010", push8,     Imm8, is_operand_size_16==true ? 2 : 4, Push((int32_t)(int8_t)imm, w));
 
@@ -1379,6 +1506,24 @@ again:
   // A3       MOV moffs16,AX    2             Move AX to (seg:offset)
   // A3       MOV moffs32,EAX   2             Move EAX to (seg:offset)
   INSTPAT("1010 0011", mov,       a2O,  is_operand_size_16==true ? 2 : 4, Mw(addr, w, Rr(R_EAX, w)));
+  // A4      MOVS m8,m8       7        Move byte [(E)SI] to ES:[(E)DI]
+  INSTPAT("1010 0100", movs,       N,    1, uint32_t daddr, saddr, inc;
+                                          daddr = Rr(R_EDI, 4);
+                                          saddr = Rr(R_ESI, 4);
+                                          inc = cpu.eflags.DF==0 ? w:(-1*w);
+                                          Mw(daddr, w, Mr(saddr, w));
+                                          Rw(R_EDI, 4, daddr + inc);
+                                          Rw(R_ESI, 4, saddr + inc);
+                                        );
+  // A5      MOVS m16,m16     7        Move word [(E)SI] to ES:[(E)DI]
+  // A5      MOVS m32,m32     7        Move dword [(E)SI] to ES:[(E)DI]
+  INSTPAT("1010 0101", movs,       N,    is_operand_size_16==true ? 2 : 4, uint32_t daddr, saddr, inc;
+                                                                        daddr = Rr(R_EDI, 4);
+                                                                        saddr = Rr(R_ESI, 4);
+                                                                        inc = cpu.eflags.DF==0 ? w:(-1*w);
+                                                                        Mw(daddr, w, Mr(saddr, w));
+                                                                        Rw(R_EDI, 4, daddr + inc);
+                                                                        Rw(R_ESI, 4, saddr + inc););
 
   // A8   ib      TEST AL,imm8      2        AND immediate byte with AL
   INSTPAT("1010 1000", mov,       Imm8,  1, cpu.eflags.CF = 0; cpu.eflags.OF = 0; EFLAGS_UPDATE_BY_RESULT((uint8_t)Rr(R_AL, 1) & (uint8_t)imm, 1););
