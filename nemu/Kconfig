@@ -170,6 +170,11 @@ config DIFFTEST
     Enable differential testing with a reference design.
     Note that this will significantly reduce the performance of NEMU.
 
+config DTRACE
+  depends on TRACE
+  bool "Enable device tracer"
+  default n
+
 choice
   prompt "Reference design"
   default DIFFTEST_REF_SPIKE if ISA_riscv
