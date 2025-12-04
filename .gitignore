@@ -12,5 +12,5 @@
 !/resources/*
 !/resources/rom/*
 !/resources/books/*
-/fceux-am
+#/fceux-am
 #/am-kernels
