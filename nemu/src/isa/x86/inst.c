@@ -265,6 +265,7 @@ enum {
   TYPE_GI82E,
   TYPE_E2G,  // Gb <- Eb / Gv <- Ev
   TYPE_EI2G,
+  TYPE_EI82G,
   TYPE_I2E,  // Eb <- Ib / Ev <- Iv
   TYPE_X2E,
   TYPE_GP67,
@@ -328,6 +329,7 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
     case TYPE_GI82E: decode_rm(s, rd_, addr, rs, w); *imm = x86_inst_fetch(s, 1); break;
     case TYPE_E2G:  decode_rm(s, rs, addr, rd_, w); break;
     case TYPE_EI2G: decode_rm(s, rs, addr, rd_, w); *imm = x86_inst_fetch(s, w); break;
+    case TYPE_EI82G: decode_rm(s, rs, addr, rd_, w); *imm = x86_inst_fetch(s, 1); break;
     case TYPE_I2E:  decode_rm(s, rd_, addr, gp_idx, w); imm(); break;
     case TYPE_X2E:  decode_rm(s, rd_, addr, gp_idx, w); break;
     case TYPE_GP67: decode_rm(s, rd_, addr, gp_idx, w); if(0 == *gp_idx) *imm = x86_inst_fetch(s, w); break;
@@ -1683,6 +1685,17 @@ again:
                                                                           cpu.eflags.CF = cpu.eflags.OF = (high_bits != sign_ext););
   // 6A PUSH imm8 2 Push immediate byte, with sign-extended.
   INSTPAT("0110 1010", push8,     Imm8, is_operand_size_16==true ? 2 : 4, Push((int32_t)(int8_t)imm, w));
+  // 6B /r ib IMUL r16,r/m16,imm8 9-14/12-17 word register ← r/m16 * sign-extended immediate byte
+  // 6B /r ib IMUL r32,r/m32,imm8 9-14/12-17 dword register ← r/m32 * sign-extended immediate byte
+  INSTPAT("0110 1011", imul3,     EI82G,  is_operand_size_16==true ? 2 : 4, uint32_t src; int64_t res;
+                                                                          src = RMr(rs, w);
+                                                                          res = (int64_t)(int32_t)src * (int64_t)(int32_t)imm;
+                                                                          Rw(rd, w, (uint32_t)(res & ((w == 2) ? 0xffff : 0xffffffff)));
+                                                                          uint64_t sign_mask = ((w == 2) ? 0x8000 : 0x80000000);
+                                                                          uint64_t high_mask = ((w == 2) ? 0xffff0000ULL : 0xffffffff00000000ULL);
+                                                                          uint64_t high_bits = res & high_mask;
+                                                                          uint64_t sign_ext = ((res & sign_mask) ? high_mask : 0ULL);
+                                                                          cpu.eflags.CF = cpu.eflags.OF = (high_bits != sign_ext););
 
   // 72  cb         JB rel8           7+m,3    Jump short if below (CF=1)
   INSTPAT("0111 0010", jb,        Imm8, 0, if (cpu.eflags.CF == 1) jmp((int8_t)imm););
