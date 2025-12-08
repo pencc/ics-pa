@@ -1,5 +1,6 @@
 #include <am.h>
 #include <nemu.h>
+#include <string.h>
 
 #define SYNC_ADDR (VGACTL_ADDR + 4)
 
@@ -29,7 +30,7 @@ void __am_gpu_fbdraw(AM_GPU_FBDRAW_T *ctl) {
   uint32_t  start_x, start_y, w, h;
   uint32_t  *fb = (uint32_t *)(uintptr_t)FB_ADDR;
   uint32_t  *pix = ctl->pixels;
-  uint32_t  i, j;
+  uint32_t  j;
 
   start_x = ctl->x;
   start_y = ctl->y;
@@ -39,9 +40,7 @@ void __am_gpu_fbdraw(AM_GPU_FBDRAW_T *ctl) {
   // move draw pointer to start point at [start_x, start_y]
   fb += (start_y * screen_w + start_x);
   for(j = 0; j < h; j++) {
-    for(i = 0; i < w; i++) {
-      *(fb + i) = *(pix + j * w + i);
-    }
+    memcpy(fb, pix + j * w, w * sizeof(uint32_t));
     // move fb to next row at start_x
     fb += screen_w;
   }

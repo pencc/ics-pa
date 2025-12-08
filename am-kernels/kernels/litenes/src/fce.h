@@ -6,7 +6,7 @@
 #define FPS          60
 #define SCR_W       256
 #define SCR_H       240
-#define FRAME_SKIP    1
+#define FRAME_SKIP    3
 
 void fce_update_screen();
 int fce_load_rom(char *rom);
