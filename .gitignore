@@ -1,5 +1,7 @@
 *.*
 *
+!/nanos-lite/*
+!/nanos-lite
 !*/
 !/nemu/*
 !/nexus-am/*
