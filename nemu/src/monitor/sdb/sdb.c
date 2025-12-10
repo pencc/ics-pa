@@ -322,7 +322,7 @@ address, output N consecutive 4 bytes in hex form. (for example: x 10 $esp){x86 
      cmd_x},
     {"p", "p [EXPR], calc the value of the expression EXPR. (for example: p $eax + 1)", cmd_p},
     {"w", "w [EXPR], when the value of expression EXPR changes, program execution is paused. (for \
-example: w *0x2000)",
+example: w *0x2000  w $pc==0x101191)",
      cmd_w},
     {"d", "d [N], delete the monitoring point with serial number N. (for example: d 2)", cmd_d},
     {"test_expr", "read file from ./tools/gen-expr/build/input then calc expr line by line, you need do as follows first:\n\
