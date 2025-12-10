@@ -83,6 +83,13 @@ typedef struct {
     uint32_t val;
   } eflags;
 
+  struct {
+    uint32_t limit;
+    uint32_t base;
+  } idtr;
+
+  uint32_t cs;
+
 } x86_CPU_state;
 
 // decode

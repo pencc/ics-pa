@@ -12,16 +12,27 @@
 *
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
-
 #include <isa.h>
 #include <memory/vaddr.h>
 
 word_t isa_raise_intr(word_t NO, vaddr_t ret_addr) {
-  /* TODO: Trigger an interrupt/exception with ``NO''.
-   * That is, use ``NO'' to index the IDT.
-   */
+  uint64_t gate32_addr, gate32_no;
+  uint64_t high, low, hl;
+  GateDesc32 gate32;
+  if(NO > cpu.idtr.limit) {
+    printf("idt(base:%d) NO(%d) > idtr_limit(%d) \n", cpu.idtr.base, NO, cpu.idtr.limit);
+    assert(0);
+  }
 
-  return 0;
+  gate32_no = cpu.idtr.base + NO * sizeof(GateDesc32);
+  low = vaddr_read(gate32_no, 4);
+  high = vaddr_read(gate32_no + 4, 4);
+  hl = (high << 32) | low;
+  memcpy(&gate32, &hl, 8);
+
+  gate32_addr = (gate32.off_31_16 << 16) | gate32.off_15_0;
+
+  return gate32_addr;
 }
 
 void query_intr() {

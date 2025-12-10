@@ -134,6 +134,7 @@ static void decode_rm(Decode *s, int *rm_reg, word_t *rm_addr, int *reg, int wid
 #define ICall(data, w) do { Push(s->dnpc, w); s->dnpc = data; } while(0)
 #define LEAVE(w)  int32_t ebp_tmp; do { Rw(R_ESP, w, Rr(R_EBP, w)); Pop(ebp_tmp, w); Rw(R_EBP, w, ebp_tmp); } while(0)
 #define Ret() do { Pop(s->dnpc, 4); } while(0)
+#define iRet() do { Pop(s->dnpc, 4); Pop(cpu.cs, 4); Pop(cpu.eflags.val, 4); } while(0)
 
 #define nop() do {  } while(0)
 
@@ -1361,9 +1362,28 @@ static void decode_operand(Decode *s, uint8_t opcode, int *rd_, word_t *src1,
   }; \
 } while (0)
 
+  // 0F 01 /2 LGDT m16&32 11 Load m into GDTR
+  // 0F 01 /3 LIDT m16&32 11 Load m into IDTR
+#define gp15() do { \
+  w = is_operand_size_16==true ? 2 : 4; \
+  switch (gp_idx) { \
+    case 3:  \
+      if(2 == w) { \
+        cpu.idtr.limit = Mr(addr, 2); \
+        cpu.idtr.base =  Mr(addr + 2, 3); \
+      } else { \
+        cpu.idtr.limit = Mr(addr, 2); \
+        cpu.idtr.base =  Mr(addr + 2, 4); \
+      } \
+      break; \
+    default: INV(s->pc); \
+  }; \
+} while (0)
+
 void _2byte_esc(Decode *s, bool is_operand_size_16) {
   uint8_t opcode = x86_inst_fetch(s, 1);
   INSTPAT_START();
+  INSTPAT("0000 0001", GIDT,  X2E, 1, gp15());
   // 0F 80  JO rel16/32       Jump near if overflow (OF=1)
   INSTPAT("1000 0000", jo,  Imm, is_operand_size_16==true ? 2 : 4, if (cpu.eflags.OF == 1) jmp(imm););
   // 0F 81  JNO rel16/32      Jump near if not overflow (OF=0)
@@ -1707,6 +1727,53 @@ again:
   // 58 + rd     POP r32       4          Pop top of stack into dword register
   INSTPAT("0101 1???", pop_r32,   N,    is_operand_size_16==true ? 2 : 4, uint32_t val; Pop(val, w); Rw(R_EAX + (opcode & 0x7), w, val););
 
+  /**
+   * struct Context {
+   *   int irq;
+   *   uintptr_t esi, ebx, eax, eip, edx, eflags, ecx, cs, esp, edi, ebp;
+   *   void *cr3;
+   * };
+   */
+  // 60 PUSHA 18 Push AX, CX, DX, BX, original SP, BP, SI, and DI
+  // 60 PUSHAD 18 Push EAX, ECX, EDX, EBX, original ESP, EBP, ESI, and EDI
+  INSTPAT("0110 0000", push_reg,  N,    is_operand_size_16==true ? 2 : 4, uint32_t temp_esp;
+                                                                        temp_esp = Rr(R_ESP, w);
+                                                                        Push(Rr(R_ESI, w), w);
+                                                                        Push(Rr(R_EBX, w), w);
+                                                                        Push(Rr(R_EAX, w), w);
+                                                                        Push(cpu.pc, w);
+                                                                        Push(Rr(R_EDX, w), w);
+                                                                        Push(cpu.eflags.val, w);
+                                                                        Push(Rr(R_ECX, w), w);
+                                                                        Push(cpu.cs, w);
+                                                                        Push(temp_esp, w);
+                                                                        Push(Rr(R_EDI, w), w);
+                                                                        Push(Rr(R_EBP, w), w);
+                                                                        );
+
+  // 61 POPA 24 Pop DI, SI, BP, SP, BX, DX, CX, and AX
+  // 61 POPAD 24 Pop EDI, ESI, EBP, ESP, EDX, ECX, and EAX
+  INSTPAT("0110 0001", pop_reg,  N,    is_operand_size_16==true ? 2 : 4, uint32_t reg_val;
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EBP, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EDI, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Pop(reg_val, w);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_ECX, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EDX, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EAX, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EBX, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_ESI, w, reg_val);
+                                                                        );
+
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
 
   // 68 PUSH imm32 2 Push immediate dword
@@ -1859,6 +1926,23 @@ again:
   INSTPAT("1101 0001", gp9,       X2E,  1, gp9());
 
   INSTPAT("1101 0011", gp5,       X2E,  1, gp5());
+
+  // CD ib INT imm8 37 Interrupt numbered by byte
+  /**
+   * 从IDTR中读出IDT的首地址
+   * 根据异常号在IDT中进行索引, 找到一个门描述符
+   * 将门描述符中的offset域组合成异常入口地址
+   * 依次将eflags, cs(代码段寄存器), eip(也就是PC)寄存器的值压栈
+   * 跳转到异常入口地址
+  */
+  INSTPAT("1100 1101", intimm8,  Imm8,  0, uint32_t func_addr = isa_raise_intr(imm, s->dnpc);
+                                          Push(cpu.eflags.val, 4);
+                                          Push(cpu.cs, 4);
+                                          ICall(func_addr, 4);
+                                        );
+
+  // CF IRET 22,pm=38 Interrupt return (far return and pop flags)
+  INSTPAT("1100 1111", iret,        N,  0, iRet());
 
   // E8  cw    CALL rel16       7+m            Call near, displacement relative to next instruction
   // E8  cd    CALL rel32       7+m            Call near, displacement relative to next instruction
