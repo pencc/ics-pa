@@ -23,9 +23,31 @@ size_t ramdisk_write(const void *buf, size_t offset, size_t len) {
   return len;
 }
 
+void print_ramdisk() {
+    uint8_t *start = &ramdisk_start;
+    uint8_t *end   = &ramdisk_end;
+    size_t size = end - start;
+
+    printf("\nRamdisk size: %d bytes\n", size);
+
+    for (size_t i = 0; i < size; i += 16) {
+        printf("%p: ", start + i);
+
+        for (size_t j = 0; j < 16 && i + j < size; j++) {
+            printf("%x ", start[i + j]);
+        }
+        printf("\n");
+    }
+}
+
 void init_ramdisk() {
-  Log("ramdisk info: start = %p, end = %p, size = %d bytes",
+  Log("ramdisk s=%p, e=%p, sz=%d bytes\n",
       &ramdisk_start, &ramdisk_end, RAMDISK_SIZE);
+  //print_ramdisk();
+}
+
+size_t get_ramdisk_addr(size_t addr) {
+  return &ramdisk_start + addr;
 }
 
 size_t get_ramdisk_size() {
