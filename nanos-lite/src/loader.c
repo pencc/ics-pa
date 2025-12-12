@@ -9,10 +9,22 @@
 # define Elf_Phdr Elf32_Phdr
 #endif
 
+#if defined(__ISA_AM_NATIVE__)
+# define EXPECT_TYPE EM_X86_64
+#elif defined(__ISA_X86__)
+# define EXPECT_TYPE EM_386
+#else
+# error Unsupported ISA
+#endif
+
 static uintptr_t loader(PCB *pcb, const char *filename) {
   int i;
   Elf32_Ehdr ehdr;
+
   ramdisk_read(&ehdr, 0, sizeof(ehdr));
+  assert(*(uint32_t *)ehdr.e_ident == 0x464c457f);
+  assert(ehdr.e_machine == EXPECT_TYPE);
+
   Elf32_Phdr phdr[ehdr.e_phnum];
   for(i = 0; i < ehdr.e_phnum; i++) {
     ramdisk_read(phdr + i, ehdr.e_phoff + (i * sizeof(Elf32_Phdr)), sizeof(Elf32_Phdr));
