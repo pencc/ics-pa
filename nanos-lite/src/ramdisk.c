@@ -28,8 +28,6 @@ void print_ramdisk() {
     uint8_t *end   = &ramdisk_end;
     size_t size = end - start;
 
-    printf("\nRamdisk size: %d bytes\n", size);
-
     for (size_t i = 0; i < size; i += 16) {
         printf("%p: ", start + i);
 
@@ -47,7 +45,11 @@ void init_ramdisk() {
 }
 
 size_t get_ramdisk_addr(size_t addr) {
-  return &ramdisk_start + addr;
+  return addr;
+}
+
+size_t get_ramdisk_start_addr() {
+  return (size_t)&ramdisk_start;
 }
 
 size_t get_ramdisk_size() {

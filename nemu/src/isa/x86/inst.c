@@ -1736,42 +1736,44 @@ again:
    */
   // 60 PUSHA 18 Push AX, CX, DX, BX, original SP, BP, SI, and DI
   // 60 PUSHAD 18 Push EAX, ECX, EDX, EBX, original ESP, EBP, ESI, and EDI
+  // in nemu: ebp, edi, esp, cs, ecx, eflags, edx, eip, eax, ebx, esi
   INSTPAT("0110 0000", push_reg,  N,    is_operand_size_16==true ? 2 : 4, uint32_t temp_esp;
                                                                         temp_esp = Rr(R_ESP, w);
-                                                                        Push(Rr(R_ESI, w), w);
-                                                                        Push(Rr(R_EBX, w), w);
-                                                                        Push(Rr(R_EAX, w), w);
-                                                                        Push(cpu.pc, w);
-                                                                        Push(Rr(R_EDX, w), w);
-                                                                        Push(cpu.eflags.val, w);
-                                                                        Push(Rr(R_ECX, w), w);
-                                                                        Push(cpu.cs, w);
-                                                                        Push(temp_esp, w);
-                                                                        Push(Rr(R_EDI, w), w);
                                                                         Push(Rr(R_EBP, w), w);
+                                                                        Push(Rr(R_EDI, w), w);
+                                                                        Push(temp_esp, w);
+                                                                        Push(cpu.cs, w);
+                                                                        Push(Rr(R_ECX, w), w);
+                                                                        Push(cpu.eflags.val, w);
+                                                                        Push(Rr(R_EDX, w), w);
+                                                                        Push(cpu.pc, w);
+                                                                        Push(Rr(R_EAX, w), w);
+                                                                        Push(Rr(R_EBX, w), w);
+                                                                        Push(Rr(R_ESI, w), w);
                                                                         );
 
   // 61 POPA 24 Pop DI, SI, BP, SP, BX, DX, CX, and AX
   // 61 POPAD 24 Pop EDI, ESI, EBP, ESP, EDX, ECX, and EAX
+  // in nemu: ebp, edi, esp, cs, ecx, eflags, edx, eip, eax, ebx, esi
   INSTPAT("0110 0001", pop_reg,  N,    is_operand_size_16==true ? 2 : 4, uint32_t reg_val;
                                                                         Pop(reg_val, w);
-                                                                        Rw(R_EBP, w, reg_val);
+                                                                        Rw(R_ESI, w, reg_val);
                                                                         Pop(reg_val, w);
-                                                                        Rw(R_EDI, w, reg_val);
+                                                                        Rw(R_EBX, w, reg_val);
                                                                         Pop(reg_val, w);
-                                                                        Pop(reg_val, w);
-                                                                        Pop(reg_val, w);
-                                                                        Rw(R_ECX, w, reg_val);
+                                                                        Rw(R_EAX, w, reg_val);
                                                                         Pop(reg_val, w);
                                                                         Pop(reg_val, w);
                                                                         Rw(R_EDX, w, reg_val);
                                                                         Pop(reg_val, w);
                                                                         Pop(reg_val, w);
-                                                                        Rw(R_EAX, w, reg_val);
+                                                                        Rw(R_ECX, w, reg_val);
                                                                         Pop(reg_val, w);
-                                                                        Rw(R_EBX, w, reg_val);
                                                                         Pop(reg_val, w);
-                                                                        Rw(R_ESI, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EDI, w, reg_val);
+                                                                        Pop(reg_val, w);
+                                                                        Rw(R_EBP, w, reg_val);
                                                                         );
 
   INSTPAT("0110 0110", data_size, N,    0, is_operand_size_16 = true; goto again;);
