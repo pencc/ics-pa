@@ -46,30 +46,6 @@
 #error _syscall_ is not implemented
 #endif
 
-char SYSCALL_INDEX[][20]=
-{
-  "SYS_exit",
-  "SYS_yield",
-  "SYS_open",
-  "SYS_read",
-  "SYS_write",
-  "SYS_kill",
-  "SYS_getpid",
-  "SYS_close",
-  "SYS_lseek",
-  "SYS_brk",
-  "SYS_fstat",
-  "SYS_time",
-  "SYS_signal",
-  "SYS_execve",
-  "SYS_fork",
-  "SYS_link",
-  "SYS_unlink",
-  "SYS_wait",
-  "SYS_times",
-  "SYS_gettimeofday"
-};
-
 intptr_t _syscall_(intptr_t type, intptr_t a0, intptr_t a1, intptr_t a2) {
   register intptr_t _gpr1 asm (GPR1) = type;
   register intptr_t _gpr2 asm (GPR2) = a0;

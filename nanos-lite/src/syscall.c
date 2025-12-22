@@ -1,5 +1,6 @@
 #include <common.h>
 #include "syscall.h"
+
 void do_syscall(Context *c) {
   uintptr_t a[4];
   a[0] = c->GPR1;
@@ -7,6 +8,9 @@ void do_syscall(Context *c) {
   a[2] = c->GPR3;
   a[3] = c->GPR4;
 
+#if defined(__STRACE__)
+  printf("\nSTRACE-CALL [#%s]( %d, %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], a[2], a[3]);
+#endif
   switch (a[0]) {
     case SYS_yield:
       c->GPRx = 0;
@@ -29,4 +33,8 @@ void do_syscall(Context *c) {
       break;
     default: panic("Unhandled syscall ID = %d", a[0]);
   }
+
+#if defined(__STRACE__)
+  printf("\nSTRACE-END  [#%s] ret=%d\n", SYSCALL_INDEX[a[0]], c->GPRx);
+#endif
 }
