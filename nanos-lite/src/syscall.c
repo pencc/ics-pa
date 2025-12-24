@@ -31,6 +31,11 @@ void do_syscall(Context *c) {
 
       }
       break;
+    case SYS_brk:
+      // TODO: 目前Nanos-lite还是一个单任务操作系统, 空闲的内存都可以让用户程序自由使用, 
+      // 因此我们只需要让SYS_brk系统调用总是返回0即可, 表示堆区大小的调整总是成功.
+      c->GPRx = 0;
+      break;
     default: panic("Unhandled syscall ID = %d", a[0]);
   }
 

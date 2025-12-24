@@ -6,7 +6,7 @@
 //#define HAS_VME
 //#define MULTIPROGRAM
 //#define TIME_SHARING
-//#define __STRACE__
+#define __STRACE__
 
 #include <am.h>
 #include <klib.h>
