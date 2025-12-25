@@ -1,5 +1,6 @@
 #include <proc.h>
 #include <elf.h>
+#include <fs.h>
 
 #ifdef __LP64__
 # define Elf_Ehdr Elf64_Ehdr
@@ -22,17 +23,26 @@ extern size_t get_ramdisk_addr(size_t addr);
 
 
 static uintptr_t loader(PCB *pcb, const char *filename) {
-  int i;
+  int i, fd;
   Elf32_Ehdr ehdr;
 
-  ramdisk_read(&ehdr, 0, sizeof(ehdr));
+  fd = fs_open(filename, 0, 0);
+  if(-1 == fd)
+    panic("not found file:%s in ramdisk\n", filename);
+
+  fs_lseek(fd, 0, SEEK_SET);
+  fs_read(fd, &ehdr, sizeof(ehdr));
   assert(*(uint32_t *)ehdr.e_ident == 0x464c457f);
   assert(ehdr.e_machine == EXPECT_TYPE);
 
   Elf32_Phdr phdr[ehdr.e_phnum];
   for(i = 0; i < ehdr.e_phnum; i++) {
-    ramdisk_read((void *)(phdr + i), ehdr.e_phoff + (i * sizeof(Elf32_Phdr)), sizeof(Elf32_Phdr));
-    ramdisk_read((void *)phdr[i].p_vaddr, phdr[i].p_offset, phdr[i].p_filesz);
+    fs_lseek(fd, ehdr.e_phoff + (i * sizeof(Elf32_Phdr)), SEEK_SET);
+    fs_read(fd, (void *)(phdr + i), sizeof(Elf32_Phdr));
+
+    fs_lseek(fd, phdr[i].p_offset, SEEK_SET);
+    fs_read(fd, (void *)phdr[i].p_vaddr, phdr[i].p_filesz);
+
     if(phdr[i].p_memsz > phdr[i].p_filesz) {
       memset((void*)(phdr[i].p_vaddr + phdr[i].p_filesz), 0, phdr[i].p_memsz - phdr[i].p_filesz);
     }
