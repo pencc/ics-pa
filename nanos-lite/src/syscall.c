@@ -51,7 +51,10 @@ void do_syscall(Context *c) {
   if(is_fs_syscall(a[0]))
     fs_getpath_by_fd(path, a[1]);
 
-  printf("\nSTRACE-CALL [#%s]( %d(%s), %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], path, a[2], a[3]);
+  if(!strcmp(path, "null"))
+    printf("\nSTRACE-CALL [#%s]( %d, %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], a[2], a[3]);
+  else
+    printf("\nSTRACE-CALL [#%s]( %d(%s), %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], path, a[2], a[3]);
 #endif
   switch (a[0]) {
     case SYS_yield:
