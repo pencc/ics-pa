@@ -1,15 +1,14 @@
 #include <unistd.h>
 #include <stdio.h>
-#include <sys/time.h>
+#include <NDL.h>
 
 int main() {
-  struct timeval start, end;
-  gettimeofday(&start, NULL);
+  uint32_t last_tick = NDL_GetTicks();
   while (1) {
-    gettimeofday(&end, NULL);
-    if (end.tv_sec - start.tv_sec >= 1) {
+    uint32_t tick = NDL_GetTicks();
+    if (tick - last_tick >= 500000) {
       printf("Hello world!\n");
-      start = end;
+      last_tick = tick;
     }
   }
   return 0;
