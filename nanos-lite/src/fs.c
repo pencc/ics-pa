@@ -24,11 +24,18 @@ size_t invalid_write(const void *buf, size_t offset, size_t len) {
   return 0;
 }
 
+size_t std_write(const void *buf, size_t offset, size_t len) {
+  for(int i = 0; i < len; i++)
+    putch(*(intptr_t*)(buf + i));
+
+  return len;
+}
+
 /* This is the information about all files in disk. */
 static Finfo file_table[] __attribute__((used)) = {
   [FD_STDIN]  = {"stdin", 0, 0, invalid_read, invalid_write},
-  [FD_STDOUT] = {"stdout", 0, 0, invalid_read, invalid_write},
-  [FD_STDERR] = {"stderr", 0, 0, invalid_read, invalid_write},
+  [FD_STDOUT] = {"stdout", 0, 0, invalid_read, std_write},
+  [FD_STDERR] = {"stderr", 0, 0, invalid_read, std_write},
 #include "files.h"
 };
 
@@ -41,7 +48,7 @@ int fs_open(const char *pathname, int flags, int mode)
       return i;
   }
 
-  panic("not found file:%s in ramdisk\n", pathname);
+  panic("fs_open: not found file:%s in ramdisk\n", pathname);
 }
 
 size_t fs_read(int fd, void *buf, size_t len)
@@ -49,7 +56,7 @@ size_t fs_read(int fd, void *buf, size_t len)
   int done_len;
 
   if(fd < 0 || fd > sizeof(file_table) - 1)
-    panic("fd:%d, less than zero, or bigger than sizeof file_table(%d).\n", fd, sizeof(file_table));
+    panic("fs_read: fd:%d, less than zero, or bigger than sizeof file_table(%d).\n", fd, sizeof(file_table));
 
   if(NULL != file_table[fd].read)
     done_len = file_table[fd].read(buf, file_table[fd].open_offset, len);
@@ -57,19 +64,34 @@ size_t fs_read(int fd, void *buf, size_t len)
     done_len = ramdisk_read(buf, file_table[fd].disk_offset + file_table[fd].open_offset, len);
 
   file_table[fd].open_offset += done_len;
+
+  return done_len;
 }
 
-size_t fs_write(int fd, const void *buf, size_t len);
+size_t fs_write(int fd, const void *buf, size_t len)
+{
+  int done_len;
+
+  if(fd < 0 || fd > sizeof(file_table) - 1)
+    panic("fs_write: fd:%d, less than zero, or bigger than sizeof file_table(%d).\n", fd, sizeof(file_table));
+
+  if(NULL != file_table[fd].write)
+    done_len = file_table[fd].write(buf, file_table[fd].open_offset, len);
+  else
+    done_len = ramdisk_write(buf, file_table[fd].disk_offset + file_table[fd].open_offset, len);
+
+  file_table[fd].open_offset += done_len;
+
+  return done_len;
+}
 
 size_t fs_lseek(int fd, size_t offset, int whence)
 {
-  int orig_offset = offset;
-
   if(fd < 0 || fd > sizeof(file_table) - 1)
-    panic("fd:%d, less than zero, or bigger than sizeof file_table(%d).\n", fd, sizeof(file_table));
+    panic("fs_lseek: fd:%d, less than zero, or bigger than sizeof file_table(%d).\n", fd, sizeof(file_table));
 
-  if(whence < SEEK_SET || SEEK_SET > SEEK_END)
-    panic("SEEK:%d not permitted.\n", whence);
+  if(whence < SEEK_SET || whence > SEEK_END)
+    panic("fs_lseek: SEEK:%d not permitted.\n", whence);
 
   switch(whence) {
     case SEEK_SET:
@@ -84,7 +106,7 @@ size_t fs_lseek(int fd, size_t offset, int whence)
   }
 
   if(offset < 0 || offset > file_table[fd].size)
-    panic("seek offset(whence:%d, offset:%d):%d not permitted.\n", whence, orig_offset, offset);
+    return -1;
 
   file_table[fd].open_offset = offset;
 

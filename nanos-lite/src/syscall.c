@@ -1,5 +1,6 @@
 #include <common.h>
 #include "syscall.h"
+#include "fs.h"
 
 const char *SYSCALL_INDEX[] = 
 {
@@ -43,18 +44,39 @@ void do_syscall(Context *c) {
       c->GPRx = 0;
       halt(0);
       break;
-    case SYS_write:
+    case SYS_open: {
+      long pathname = a[1];
+      int flags = a[2];
+      int mode = a[3];
+      c->GPRx = fs_open((const char*)pathname, flags, mode);
+      break;
+    }
+    case SYS_read: {
+      int fd = a[1];
+      long buf = a[2];
+      int len = a[3];
+      c->GPRx = fs_read(fd, (void *)buf, len);
+      break;
+    }
+    case SYS_write: {
       int fd = a[1];
       long addr = a[2];
       int count = a[3];
-      if(1 == fd || 2 == fd) { // stdout & stderr
-        for(int i = 0; i < count; i++)
-          putch(*(intptr_t*)(addr + i));
-        c->GPRx = count;
-      } else { // TODO:
-
-      }
+      c->GPRx = fs_write(fd, (void *)addr, count);
       break;
+    }
+    case SYS_close: {
+      int fd = a[1];
+      c->GPRx = fs_close(fd);
+      break;
+    }
+    case SYS_lseek: {
+      int fd = a[1];
+      size_t offset = a[2];
+      int whence = a[3];
+      c->GPRx = fs_lseek(fd, offset, whence);
+      break;
+    }
     case SYS_brk:
       // TODO: 目前Nanos-lite还是一个单任务操作系统, 空闲的内存都可以让用户程序自由使用, 
       // 因此我们只需要让SYS_brk系统调用总是返回0即可, 表示堆区大小的调整总是成功.

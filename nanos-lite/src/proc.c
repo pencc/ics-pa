@@ -26,8 +26,12 @@ void init_proc() {
 
   Log("Initializing processes...");
 
+  // char exec_file[] = "/bin/dummy";
+  // char exec_file[] = "/bin/hello";
+  char exec_file[] = "/bin/file-test";
+
   // load program here
-  naive_uload(NULL, "/bin/hello");
+  naive_uload(NULL, exec_file);
 }
 
 Context* schedule(Context *prev) {

@@ -177,8 +177,10 @@ $(CLEAN_ALL):
 .PHONY: clean-all $(CLEAN_ALL)
 
 ### Build fsimg and ramdisk for Nanos-lite
+### Change entry in ics-pa/nanos-lite/src/proc.c  init_proc()-->naive_uload(NULL, "/bin/file-test")
+### pack ramdisk by exec in ics-pa/nanos-lite# make ARCH=x86-nemu update
 APPS =
-TESTS = dummy hello
+TESTS = dummy hello file-test
 
 fsimg: $(addprefix apps/, $(APPS)) $(addprefix tests/, $(TESTS))
 	-for t in $^; do $(MAKE) -s -C $(NAVY_HOME)/$$t install; done
