@@ -26,6 +26,19 @@ const char *SYSCALL_INDEX[] =
   "SYS_gettimeofday"
 };
 
+int is_fs_syscall(int syscall_id)
+{
+  if(
+    SYS_open == syscall_id ||
+    SYS_read == syscall_id ||
+    SYS_write == syscall_id ||
+    SYS_lseek == syscall_id ||
+    SYS_close == syscall_id
+    )
+    return 1;
+  return 0;
+}
+
 void do_syscall(Context *c) {
   uintptr_t a[4];
   a[0] = c->GPR1;
@@ -34,7 +47,11 @@ void do_syscall(Context *c) {
   a[3] = c->GPR4;
 
 #if defined(__STRACE__)
-  printf("\nSTRACE-CALL [#%s]( %d, %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], a[2], a[3]);
+  char path[1024] = "null";
+  if(is_fs_syscall(a[0]))
+    fs_getpath_by_fd(path, a[1]);
+
+  printf("\nSTRACE-CALL [#%s]( %d(%s), %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], path, a[2], a[3]);
 #endif
   switch (a[0]) {
     case SYS_yield:

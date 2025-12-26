@@ -39,6 +39,14 @@ static Finfo file_table[] __attribute__((used)) = {
 #include "files.h"
 };
 
+void fs_getpath_by_fd(void* path, int fd)
+{
+  if(fd < 0 || fd > sizeof(file_table) - 1)
+    return;
+
+  strncpy(path, file_table[fd].name, strlen(file_table[fd].name));
+}
+
 // ignore flags & mode
 int fs_open(const char *pathname, int flags, int mode)
 {
