@@ -2,6 +2,14 @@
 #include "syscall.h"
 #include "fs.h"
 
+/*
+ * Structure returned by gettimeofday(2) system call, and used in other calls.
+ */
+struct timeval {
+	long		tv_sec;		/* seconds */
+	long	tv_usec;	/* and microseconds */
+};
+
 const char *SYSCALL_INDEX[] = 
 {
   "SYS_exit",
@@ -100,6 +108,13 @@ void do_syscall(Context *c) {
     case SYS_brk:
       // TODO: 目前Nanos-lite还是一个单任务操作系统, 空闲的内存都可以让用户程序自由使用, 
       // 因此我们只需要让SYS_brk系统调用总是返回0即可, 表示堆区大小的调整总是成功.
+      c->GPRx = 0;
+      break;
+    case SYS_gettimeofday:
+      struct timeval *tv = (struct timeval *)a[1];
+      uint64_t us = io_read(AM_TIMER_UPTIME).us;
+      tv->tv_sec = us / 1000000;
+      tv->tv_usec = us % 1000000;
       c->GPRx = 0;
       break;
     default: panic("Unhandled syscall ID = %d", a[0]);

@@ -180,7 +180,7 @@ $(CLEAN_ALL):
 ### Change entry in ics-pa/nanos-lite/src/proc.c  init_proc()-->naive_uload(NULL, "/bin/file-test")
 ### pack ramdisk by exec in ics-pa/nanos-lite# make ARCH=x86-nemu update
 APPS =
-TESTS = dummy hello file-test
+TESTS = dummy hello file-test timer-test
 
 fsimg: $(addprefix apps/, $(APPS)) $(addprefix tests/, $(TESTS))
 	-for t in $^; do $(MAKE) -s -C $(NAVY_HOME)/$$t install; done
