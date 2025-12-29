@@ -6,6 +6,7 @@ extern size_t ramdisk_write(const void *buf, size_t offset, size_t len);
 extern size_t serial_write(const void *buf, size_t offset, size_t len);
 
 extern size_t events_read(void *buf, size_t offset, size_t len);
+size_t dispinfo_read(void *buf, size_t offset, size_t len);
 
 typedef size_t (*ReadFn) (void *buf, size_t offset, size_t len);
 typedef size_t (*WriteFn) (const void *buf, size_t offset, size_t len);
@@ -19,7 +20,7 @@ typedef struct {
   size_t open_offset;
 } Finfo;
 
-enum {FD_STDIN, FD_STDOUT, FD_STDERR, FD_FB, FD_EVENTS};
+enum {FD_STDIN, FD_STDOUT, FD_STDERR, FD_FB, FD_EVENTS, FD_DISPINFO};
 
 size_t invalid_read(void *buf, size_t offset, size_t len) {
   panic("should not reach here");
@@ -37,6 +38,7 @@ static Finfo file_table[] __attribute__((used)) = {
   [FD_STDOUT] = {"stdout", 0, 0, invalid_read, serial_write},
   [FD_STDERR] = {"stderr", 0, 0, invalid_read, serial_write},
   [FD_EVENTS] = {"/dev/events", 0, 0, events_read, invalid_write},
+  [FD_DISPINFO] = {"/proc/dispinfo", 0, 0, dispinfo_read, invalid_write},
 #include "files.h"
 };
 
@@ -69,8 +71,13 @@ size_t fs_read(int fd, void *buf, size_t len)
 
   if(NULL != file_table[fd].read)
     done_len = file_table[fd].read(buf, file_table[fd].open_offset, len);
-  else
+  else {
+    if(file_table[fd].open_offset > file_table[fd].size)
+      return 0;
+    if(file_table[fd].open_offset + len > file_table[fd].size)
+      len = file_table[fd].size - file_table[fd].open_offset;
     done_len = ramdisk_read(buf, file_table[fd].disk_offset + file_table[fd].open_offset, len);
+  }
 
   file_table[fd].open_offset += done_len;
 
@@ -86,8 +93,13 @@ size_t fs_write(int fd, const void *buf, size_t len)
 
   if(NULL != file_table[fd].write)
     done_len = file_table[fd].write(buf, file_table[fd].open_offset, len);
-  else
+  else {
+    if(file_table[fd].open_offset >= file_table[fd].size)
+      return 0;
+    if(file_table[fd].open_offset + len > file_table[fd].size)
+      len = file_table[fd].size - file_table[fd].open_offset;
     done_len = ramdisk_write(buf, file_table[fd].disk_offset + file_table[fd].open_offset, len);
+  }
 
   file_table[fd].open_offset += done_len;
 

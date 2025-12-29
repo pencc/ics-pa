@@ -32,8 +32,14 @@ size_t events_read(void *buf, size_t offset, size_t len) {
     keyname[ev.keycode]);;
 }
 
+#define DISP_W 640
+#define DISP_H 320
 size_t dispinfo_read(void *buf, size_t offset, size_t len) {
-  return 0;
+  int disp_w, disp_h;
+  disp_w = DISP_W;
+  disp_h = DISP_H;
+  snprintf((char*)buf, len, "%d %d", disp_w, disp_h);
+  return len;
 }
 
 size_t fb_write(const void *buf, size_t offset, size_t len) {

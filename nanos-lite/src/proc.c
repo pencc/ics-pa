@@ -29,8 +29,9 @@ void init_proc() {
   // char exec_file[] = "/bin/dummy";
   // char exec_file[] = "/bin/hello";
   // char exec_file[] = "/bin/file-test";
-  //char exec_file[] = "/bin/timer-test";
-  char exec_file[] = "/bin/event-test";
+  // char exec_file[] = "/bin/timer-test";
+  // char exec_file[] = "/bin/event-test";
+  char exec_file[] = "/bin/bmp-test";
 
   // load program here
   naive_uload(NULL, exec_file);
