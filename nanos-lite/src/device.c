@@ -32,17 +32,27 @@ size_t events_read(void *buf, size_t offset, size_t len) {
     keyname[ev.keycode]);;
 }
 
-#define DISP_W 640
-#define DISP_H 320
+int DISP_W;
+int DISP_H;
+int DISP_VMEMSZ;
+
+size_t init_dispinfo()
+{
+  AM_GPU_CONFIG_T cfg;
+  ioe_read(AM_GPU_CONFIG, &cfg);
+  DISP_W = cfg.width;
+  DISP_H = cfg.height;
+  DISP_VMEMSZ = cfg.vmemsz;
+  return 0;
+}
+
 size_t dispinfo_read(void *buf, size_t offset, size_t len) {
-  int disp_w, disp_h;
-  disp_w = DISP_W;
-  disp_h = DISP_H;
-  snprintf((char*)buf, len, "%d %d", disp_w, disp_h);
+  snprintf((char*)buf, len, "%d %d", DISP_W, DISP_H);
   return len;
 }
 
 size_t fb_write(const void *buf, size_t offset, size_t len) {
+  ioe_write(AM_GPU_FBDRAW, (AM_GPU_FBDRAW_T*)buf);
   return 0;
 }
 
