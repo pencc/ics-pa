@@ -37,12 +37,18 @@ const char *SYSCALL_INDEX[] =
 int is_fs_syscall(int syscall_id)
 {
   if(
-    SYS_open == syscall_id ||
     SYS_read == syscall_id ||
     SYS_write == syscall_id ||
     SYS_lseek == syscall_id ||
     SYS_close == syscall_id
     )
+    return 1;
+  return 0;
+}
+
+int is_open_syscall(int syscall_id)
+{
+  if(SYS_open == syscall_id)
     return 1;
   return 0;
 }
@@ -56,8 +62,12 @@ void do_syscall(Context *c) {
 
 #if defined(__STRACE__)
   char path[1024] = "null";
-  if(is_fs_syscall(a[0]))
+  if(is_fs_syscall(a[0])) {
     fs_getpath_by_fd(path, a[1]);
+  }
+  if(is_open_syscall(a[0])) {
+    strncpy(path, (char*)a[1], sizeof(path));
+  }
 
   if(!strcmp(path, "null"))
     printf("\nSTRACE-CALL [#%s]( %d, %d, %x )\n", SYSCALL_INDEX[a[0]], a[1], a[2], a[3]);

@@ -125,37 +125,45 @@ typedef	__uint128_t fixedptud;
  * Putting them only in macros will effectively make them optional. */
 #define fixedpt_tofloat(T) ((float) ((T)*((float)(1)/(float)(1L << FIXEDPT_FBITS))))
 
-/* Multiplies a fixedpt number with an integer, returns the result. */
-static inline fixedpt fixedpt_muli(fixedpt A, int B) {
-	return 0;
-}
-
 /* Divides a fixedpt number with an integer, returns the result. */
 static inline fixedpt fixedpt_divi(fixedpt A, int B) {
-	return 0;
+	return A / B;
 }
 
 /* Multiplies two fixedpt numbers, returns the result. */
 static inline fixedpt fixedpt_mul(fixedpt A, fixedpt B) {
-	return 0;
+  // 多了一个2^8, 除掉他
+	return A * B  FIXEDPT_FBITS;
 }
 
 
 /* Divides two fixedpt numbers, returns the result. */
 static inline fixedpt fixedpt_div(fixedpt A, fixedpt B) {
-	return 0;
+  // 除数变成(B / FIXEDPT_ONE)，就和 fixedpt_divi 一致了
+	return A / (B >> FIXEDPT_FBITS);
 }
 
 static inline fixedpt fixedpt_abs(fixedpt A) {
-	return 0;
+  // 如果<0, 求相反数
+	return A < 0 ? -A : A;
 }
 
 static inline fixedpt fixedpt_floor(fixedpt A) {
-	return 0;
+  // 没有小数，直接返回, 这个条件就包含了+0/-0了
+	if (fixedpt_fracpart(A) == 0) return A;
+  // 有小数且正数，直接取整数部分
+	if (A > 0) return A & (~FIXEDPT_FMASK);
+  // 有小数且负数，先取相反数为正数+1，再转回去
+	else return -(((-A) & (~FIXEDPT_FMASK)) + FIXEDPT_ONE);
 }
 
 static inline fixedpt fixedpt_ceil(fixedpt A) {
-	return 0;
+  // 没有小数，直接返回, 这个条件就包含了+0/-0了
+	if (fixedpt_fracpart(A) == 0) return A;
+  // 有小数且正数，取整数部分+1
+	if (A > 0) return (A & (~FIXEDPT_FMASK)) + FIXEDPT_ONE;
+  // 有小数且负数，先取相反数，保留整数部分，取相反数
+	else return -((-A & ~FIXEDPT_FMASK));
 }
 
 /*
